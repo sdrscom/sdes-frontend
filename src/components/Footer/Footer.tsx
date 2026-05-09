@@ -1,7 +1,7 @@
 import { Phone, Mail, MapPin } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
-import logo from "../../assets/Footer-logo.png";
+import logo from "../../assets/Footer-Logo.png";
 
 export default function Footer() {
   const { language } = useLanguage();

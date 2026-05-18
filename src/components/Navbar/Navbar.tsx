@@ -116,7 +116,7 @@ export default function Navbar() {
   };
 
   const handleLogin = () => {
-    window.open("http://www.sdrs.com.sa:8011/account/login", "_blank");
+    window.open("http://62.149.77.120:8011/account/login", "_blank");
   };
 
   return (

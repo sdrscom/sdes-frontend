@@ -230,6 +230,16 @@ export default function Navbar() {
             <LogIn className="w-4 h-4 relative z-10" />
             <span className="relative z-10">{t.login}</span>
           </button>
+          <button
+            onClick={handleOperationPortal}
+            className="group relative flex items-center gap-2 py-3 px-4 rounded-xl font-semibold text-white transition-all duration-300 overflow-hidden shadow-lg hover:scale-105 active:scale-95"
+            style={{
+              background: "linear-gradient(to right, #1a5276, #2980b9)",
+            }}
+          >
+         <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+         <span className="relative z-10">Operation Portal</span>
+         </button>
         </div>
 
         {/* Mobile Menu Button */}

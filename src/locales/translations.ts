@@ -678,9 +678,9 @@ export const translations = {
         phone: "Phone",
         email: "Email",
         address: "Address",
-        addressLine1: "F5MQ+J8C،",
+        addressLine1: "Kingdom of Saudi Arabia, Dammam City, King Abdulaziz Port,",
         addressLine2:
-          "Saudi Development & Export Service Co. Ltd. P.O. Box 28056 Dammam 31437, Kingdom Of Saudi Arabia",
+          "Saudi Development and Export Services Co. Ltd. P.O. Box 28056 Dammam 31737",
       },
 
       copyright: "Copyright 2026 © All Right Reserved Design by SDES",

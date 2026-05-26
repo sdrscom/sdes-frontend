@@ -35,7 +35,7 @@ export const translations = {
       vatDesc:
         "No VAT on services within Dammam Bonded Zone until final shipment clearance",
       payLater: "Pay Later",
-      deferredTitle: "Deferred Customs Payment",
+      deferredTitle: "Deferred Customs Duty Payment",
       deferredDesc:
         "Flexible payment options with deferred customs duty & partial clearance available",
       saveMore: "Save More",

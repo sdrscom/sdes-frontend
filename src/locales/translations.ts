@@ -675,7 +675,7 @@ export const translations = {
 
       information: {
         title: "Information",
-        phone: "Phone", "+966 13 813 4214",
+        phone: "Phone",
         email: "Email",
         address: "Address",
         addressLine1: "Kingdom of Saudi Arabia, Dammam City, King Abdulaziz Port,",

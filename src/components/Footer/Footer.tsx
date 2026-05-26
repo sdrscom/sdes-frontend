@@ -155,7 +155,7 @@ export default function Footer() {
                   <p className="font-semibold">
                     {currentTranslations.information.phone}
                   </p>
-                  <p className="text-gray-300 text-sm">+966 13 813 4214</p>
+                  <p className="text-gray-300 text-sm">+966 13 813 4200</p>
                 </div>
               </div>
 

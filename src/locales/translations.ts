@@ -683,7 +683,7 @@ export const translations = {
           "Saudi Development & Export Service Co. Ltd. P.O. Box 28056 Dammam 31437, Kingdom Of Saudi Arabia",
       },
 
-      copyright: "Copyright 2025 © All Right Reserved Design by SDES",
+      copyright: "Copyright 2026 © All Right Reserved Design by SDES",
     },
 
     newsPage: {

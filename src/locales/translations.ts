@@ -388,21 +388,18 @@ export const translations = {
         ceoRole: "CEO / General Manager",
       },
 
-      managementTeam: {
-        title: "Management Team",
+      MeetOurLeadership: {
+        title: "Meet Our Leadership",
         swipeText: "Swipe or Drag to Explore More",
       },
 
       teamMembers: [
         { name: "Mathew Abraham", title: "Finance Manager" },
-        { name: "Mohammed Al- Shammi", title: "Commercial Director" },
+        { name: "Mohammed Saad Al Suhaim", title: "Commercial Director" },
         { name: "Mohammed Ahmed Abdulrahim", title: "Operation Manager" },
-        { name: "Haitham Abbas", title: "IT Manager" },
-        { name: "Mohammed Abdulkhaleq", title: "Applications Manager" },
+        { name: "Abdul Mannan", title: "IT Manager" },
         { name: "Ali Al-Basri", title: "HR & Admin Manager" },
-        { name: "Abdulaziz Al-Muntakh", title: "Personnel Manager" },
         { name: "Mohammad Saad Al Suhaim", title: "Customs Relations Manager" },
-        { name: "Hood Al-Moalem", title: "Manifest Superintendent" },
         { name: "Esmail AR Zari", title: "Maintenance Manager" },
       ],
     },

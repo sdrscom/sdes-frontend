@@ -389,7 +389,7 @@ export const translations = {
       },
 
       managementTeam: {
-        title: "Meet Our Leadership",
+        title: "Management Team",
         swipeText: "Swipe or Drag to Explore More",
       },
 

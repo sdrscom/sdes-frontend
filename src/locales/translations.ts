@@ -388,7 +388,7 @@ export const translations = {
         ceoRole: "CEO / General Manager",
       },
 
-      MeetOurLeadership: {
+      managementTeam: {
         title: "Meet Our Leadership",
         swipeText: "Swipe or Drag to Explore More",
       },

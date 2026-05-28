@@ -1,7 +1,7 @@
 import { Phone, Mail, MapPin } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
-import logo from "../../assets/Footer-logo.png";
+import logo from "/Footer-logo.png";
 
 export default function Footer() {
   const { language } = useLanguage();
@@ -155,7 +155,7 @@ export default function Footer() {
                   <p className="font-semibold">
                     {currentTranslations.information.phone}
                   </p>
-                 <p className="text-gray-300 text-sm" dir="ltr">+966 13 813 4200</p>
+                  <p className="text-gray-300 text-sm">+966138134200</p>
                 </div>
               </div>
 

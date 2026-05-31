@@ -93,8 +93,8 @@ const AboutSections: React.FC = () => {
             <div className="relative">
               <div className="w-full max-w-sm lg:max-w-md mx-auto lg:mt-10 rounded-xl overflow-hidden shadow-2xl transition duration-500 transform">
                 <div className="w-full h-96 lg:h-[500px] bg-gray-800 flex items-center justify-center">
-                  <User size={96} className="text-gray-500 opacity-60" />
-                </div>
+          <img src="/ceo.jpg" alt="CEO" className="w-full h-full object-cover" />
+         </div>
                 <div
                   className="absolute bottom-0 left-0 w-full h-1"
                   style={{

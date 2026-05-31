@@ -9,14 +9,19 @@ import { translations } from "../../locales/translations";
 const TeamMemberCard: React.FC<{
   name: string;
   title: string;
+  image?: string;
   isRTL: boolean;
-}> = ({ name, title, isRTL }) => {
+}> = ({ name, title, image, isRTL }) => {
   return (
     <div className="w-full rounded-xl overflow-hidden shadow-2xl relative transition duration-300">
       <div className="h-[400px] w-full overflow-hidden relative">
-        <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-          <User size={96} className="text-gray-500 opacity-60" />
-        </div>
+       <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+        {image ? (
+          <img src={image} alt={name} className="w-full h-full object-cover" />
+       ) : (
+         <User size={96} className="text-gray-500 opacity-60" />
+       )}
+      </div>
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
 

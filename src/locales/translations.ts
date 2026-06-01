@@ -394,14 +394,14 @@ export const translations = {
       },
 
       teamMembers: [
-        { name: "Mathew Abraham", title: "Finance Manager" },
-        { name: "Mohammed Saad Al Suhaim", title: "Commercial Director" },
-        { name: "Mohammed Ahmed Abdulrahim", title: "Operation Manager" },
-        { name: "Abdul Mannan", title: "IT Manager" },
-        { name: "Ali Al-Basri", title: "HR & Admin Manager" },
-        { name: "Mohammad Saad Al Suhaim", title: "Customs Relations Manager" },
-        { name: "Esmail AR Zari", title: "Maintenance Manager" },
-      ],
+      { name: "Mathew Abraham", title: "Finance Manager", image: "/mathew.jpg" },
+      { name: "Mohammed Saad Al Suhaim", title: "Commercial Director", image: "/mohammed-saad.jpg" },
+      { name: "Mohammed Ahmed Abdulrahim", title: "Operation Manager", image: "/mohammed-ahmed.jpg" },
+      { name: "Abdul Mannan", title: "IT Manager", image: "/abdul-mannan.jpg" },
+      { name: "Ali Al-Basri", title: "HR & Admin Manager", image: "/ali.jpg" },
+      { name: "Mohammad Saad Al Suhaim", title: "Customs Relations Manager", image: "/mohammad-saad.jpg" },
+     { name: "Esmail AR Zari", title: "Maintenance Manager", image: "/esmail.jpg" },
+    ],
     },
     sdesStoryline: {
       header: {

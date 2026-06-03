@@ -69,7 +69,7 @@ export default function Hero() {
       `}</style>
 
       <div className="relative min-h-screen h-screen flex items-center justify-center overflow-hidden">
-        {videoUrl && (
+        {videoUrl ? (
           <video
             className="absolute inset-0 w-full h-full object-cover"
             autoPlay
@@ -77,8 +77,14 @@ export default function Hero() {
             loop
             playsInline
           >
-            <source src={videoUrl} type="video/mp4" />
+           <source src={videoUrl} type="video/mp4" />
           </video>
+        ) : (
+          <img
+            src="/hero-bg.jpg"
+            alt="Hero Background"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
         )}
 
         <div

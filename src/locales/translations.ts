@@ -399,7 +399,6 @@ export const translations = {
       { name: "Mohammed Ahmed Abdulrahim", title: "Operation Manager", image: "/mohammed-ahmed.jpg" },
       { name: "Abdul Mannan", title: "IT Manager", image: "/abdul-mannan.jpg" },
       { name: "Ali Al-Basri", title: "HR & Admin Manager", image: "/ali.jpg" },
-      { name: "Mohammad Saad Al Suhaim", title: "Customs Relations Manager", image: "/mohammad-saad.jpg" },
      { name: "Esmail AR Zari", title: "Maintenance Manager", image: "/esmail.jpg" },
     ],
     },

@@ -205,7 +205,7 @@ export default function Chatbot() {
     async function sendAudioToGemini(base64Audio) {
         if (!isVoiceActive) return;
         try {
-            const response = await fetch('http://localhost:5000/api/voice-chat', {
+            const response = await fetch('https://sdes-backend-yourname.vercel.app/api/chat', { ... })
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ audioBase64: base64Audio })

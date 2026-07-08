@@ -61,10 +61,11 @@ app.post('/api/chat', async (req, res) => {
         const chat = model.startChat({ history: sanitizedHistory });
 
         let result = await chat.sendMessage(message);
-        const call = result.response.functionCalls();
+        const calls = result?.response?.functionCalls;
+        const callList = Array.isArray(calls) ? calls : (calls ? [calls] : []);
 
-        if (call && call.length > 0) {
-            const toolCall = call[0];
+        if (callList.length > 0) {
+            const toolCall = callList[0];
             const toolResult = await executeTool(toolCall.name, toolCall.args);
 
             result = await chat.sendMessage([{

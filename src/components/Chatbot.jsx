@@ -5,7 +5,7 @@ import { marked } from 'marked';
 const getBackendUrl = () => {
     return window.location.hostname === 'localhost' 
         ? 'http://localhost:5000' 
-        : 'https://sdes-backend-kfc6g1bko-sdrscoms-projects.vercel.app';
+        : 'https://sdes-backend.vercel.app';
 };
 
 const css = `

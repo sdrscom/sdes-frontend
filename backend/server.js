@@ -129,6 +129,11 @@ app.post('/api/reload-knowledge', (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`\n🚀 Server is running on port ${port}`);
-});
+// Only start the standalone server if running locally
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(port, () => {
+        console.log(`\n🚀 Server is running on port ${port}`);
+    });
+}
+
+export default app;

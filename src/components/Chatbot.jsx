@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 
+const getBackendUrl = () => {
+    return window.location.hostname === 'localhost' 
+        ? 'http://localhost:5000' 
+        : 'https://sdes-backend.vercel.app';
+};
+
 const css = `
 :root {
         --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
@@ -83,7 +89,6 @@ export default function Chatbot() {
     const silenceDetectorRef = useRef(null);
 
     useEffect(() => {
-        // Setup SpeechRecognition if available
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SpeechRecognition) {
             const recog = new SpeechRecognition();
@@ -97,7 +102,6 @@ export default function Chatbot() {
         }
 
         return () => {
-            // cleanup
             if (silenceDetectorRef.current) {
                 try { silenceDetectorRef.current.stop(); } catch (e) {}
             }
@@ -107,7 +111,6 @@ export default function Chatbot() {
     }, []);
 
     useEffect(() => {
-        // scroll on new message
         if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     }, [messages]);
 
@@ -202,11 +205,13 @@ export default function Chatbot() {
         }
     }
 
+    const backendUrl = getBackendUrl();
+    const initialBotGreeting = 'Hello! I am the SDRS AI Assistant. How can I help you today?';
+
     async function sendAudioToGemini(base64Audio) {
         if (!isVoiceActive) return;
         try {
-            // FIX 1: URL is pointed correctly to /voice-chat and syntax is fixed
-            const response = await fetch('https://sdes-backend-kfc6g1bko-sdrscoms-projects.vercel.app/api/voice-chat', {
+            const response = await fetch(`${backendUrl}/api/voice-chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ audioBase64: base64Audio })
@@ -258,10 +263,6 @@ export default function Chatbot() {
             closeVoice();
         }
     }
-
-    // FIX 2: Text Chat Base URL updated to Vercel
-    const backendUrl = 'https://sdes-backend-kfc6g1bko-sdrscoms-projects.vercel.app';
-    const initialBotGreeting = 'Hello! I am the SDRS AI Assistant. How can I help you today?';
 
     async function handleSendMessage() {
         const userMessage = input.trim();

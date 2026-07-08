@@ -205,7 +205,8 @@ export default function Chatbot() {
     async function sendAudioToGemini(base64Audio) {
         if (!isVoiceActive) return;
         try {
-            const response = await fetch('https://sdes-backend-yourname.vercel.app/api/chat', { ... })
+            // FIX 1: URL is pointed correctly to /voice-chat and syntax is fixed
+            const response = await fetch('https://sdes-backend-kfc6g1bko-sdrscoms-projects.vercel.app/api/voice-chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ audioBase64: base64Audio })
@@ -258,7 +259,8 @@ export default function Chatbot() {
         }
     }
 
-    const backendUrl = 'http://127.0.0.1:5000';
+    // FIX 2: Text Chat Base URL updated to Vercel
+    const backendUrl = 'https://sdes-backend-kfc6g1bko-sdrscoms-projects.vercel.app';
     const initialBotGreeting = 'Hello! I am the SDRS AI Assistant. How can I help you today?';
 
     async function handleSendMessage() {

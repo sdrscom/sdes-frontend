@@ -11,6 +11,7 @@ import Location from "./pages/Location/Location";
 import FAQ from "./components/FAQ/FAQ";
 import NewsPage from "./pages/News/NewsPage";
 import NewsDetailPage from "./pages/News/NewsDetailPage";
+import Chatbot from "./components/Chatbot.jsx";
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="news/:id" element={<NewsDetailPage />} />
         </Route>
       </Routes>
+      <Chatbot />
     </LanguageProvider>
   );
 }

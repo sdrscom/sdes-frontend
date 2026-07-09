@@ -12,7 +12,7 @@ const css = `
         --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
         --bot-msg-bg: #ffffff; --border-color: #e2e8f0; --text-main: #1e293b; --text-muted: #64748b;
 }
-#chat-container { width: 340px; height: 520px; max-height: calc(100vh - 40px); background: linear-gradient(145deg, rgba(255,255,255,0.93), rgba(238,244,255,0.92)); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.9); }
+#chat-container { width: 360px; height: 520px; max-height: calc(100vh - 40px); background: rgba(255,255,255,0.72); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(20px) saturate(120%); border: 1px solid rgba(255,255,255,0.28); }
 #chat-header { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.16); }
 .header-logo { width: 34px; height: 34px; background: white; border-radius: 50%; margin-right: 12px; display: flex; align-items: center; justify-content: center; color: #0033a0; font-size: 11px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(0, 51, 160, 0.12); }
 .chat-close-btn { background: rgba(255,255,255,0.12); border: none; color: white; cursor: pointer; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
@@ -20,7 +20,7 @@ const css = `
 .chat-toggle-button { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: #fff; border: none; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000; transition: transform 0.2s ease, box-shadow 0.2s ease; }
 .chat-toggle-button:hover { transform: translateY(-2px); box-shadow: 0 24px 48px rgba(0, 0, 0, 0.26); }
 .chat-toggle-button .button-label { position: absolute; right: 70px; bottom: 8px; font-size: 12px; color: #fff; background: rgba(0, 51, 160, 0.95); padding: 6px 10px; border-radius: 999px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18); }
-#messages { flex: 1; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: linear-gradient(180deg, #f5f9ff 0%, #eef4ff 100%); }
+#messages { flex: 1; padding: 12px 18px 18px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: transparent; }
 .message-wrapper { display: flex; flex-direction: column; max-width: 82%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
@@ -29,20 +29,24 @@ const css = `
 .bot .message { background: rgba(255,255,255,0.98); color: #102a43; border-bottom-left-radius: 6px; border: 1px solid rgba(15, 23, 42, 0.08); }
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
 .timestamp { font-size: 11px; color: #52637a; margin-top: 6px; }
-#input-area { display: flex; align-items: center; gap: 6px; padding: 12px 14px; background: rgba(255,255,255,0.84); border-top: 1px solid rgba(15, 23, 42, 0.08); backdrop-filter: blur(12px); }
+#input-area { display: flex; align-items: center; gap: 8px; padding: 12px 20px 12px 14px; background: rgba(255,255,255,0.6); border-top: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(12px); }
 .icon-btn { background: none; border: none; cursor: pointer; color: #64748b; padding: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 50%; width: 36px; height: 36px; }
 .icon-btn:hover { color: #0033a0; background: rgba(0, 51, 160, 0.08); }
-#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.08); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); resize: none; overflow: hidden; max-height: 160px; }
+#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.06); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.85); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); resize: none; overflow: hidden; max-height: 160px; }
 #message-input:focus { border-color: rgba(0, 51, 160, 0.24); box-shadow: 0 0 0 3px rgba(0, 51, 160, 0.10); }
 .icon-btn.mic-active { background: rgba(0,122,255,0.12); color: #0047d9; box-shadow: 0 6px 12px rgba(0,71,217,0.08); }
 .icon-btn.voice-active { background: rgba(0,71,217,0.12); color: #0033a0; box-shadow: 0 8px 18px rgba(0,51,160,0.10); }
-#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 2px; box-shadow: 0 12px 24px rgba(0, 51, 160, 0.18); }
+#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 8px; box-shadow: 0 12px 24px rgba(0, 51, 160, 0.18); flex: 0 0 auto; }
 #send-btn:disabled { opacity: 0.7; cursor: wait; box-shadow: none; }
 .typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 88px; }
 .typing-dot { width: 8px; height: 8px; border-radius: 50%; background: #0033a0; animation: typingPulse 1.2s infinite ease-in-out; }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
 @keyframes typingPulse { 0%, 80%, 100% { transform: translateY(0); opacity: 0.5; } 40% { transform: translateY(-3px); opacity: 1; } }
+
+.quick-pills { display:flex; gap:8px; padding: 8px 18px 0 18px; flex-wrap:wrap; }
+.pill { background: rgba(255,255,255,0.7); border: 1px solid rgba(15,23,42,0.04); color: #0f172a; padding:6px 10px; border-radius:999px; font-size:13px; cursor:pointer; box-shadow: 0 6px 12px rgba(15,23,42,0.03); }
+.pill:hover { background: rgba(255,255,255,0.9); }
 
 /* VOICE OVERLAY */
 #voice-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.98); z-index: 100; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 40px 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
@@ -104,6 +108,7 @@ export default function Chatbot() {
     const audioQueueRef = useRef([]);
     const silenceDetectorRef = useRef(null);
     const speechRecognitionRef = useRef(null);
+    const recorderTimerRef = useRef(null);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -203,6 +208,7 @@ export default function Chatbot() {
                 try { mr.stop(); } catch (e) {}
                 setVisualizerState('processing');
             }
+            try { clearTimeout(recorderTimerRef.current); recorderTimerRef.current = null; } catch (e) {}
         }
     }
 
@@ -219,7 +225,9 @@ export default function Chatbot() {
                 setVisualizerState('processing');
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 // allow smaller blobs to be processed to avoid endless listening loops
+                try { clearTimeout(recorderTimerRef.current); recorderTimerRef.current = null; } catch (e) {}
                 if (audioBlob.size < 200) {
+                    // if tiny, keep listening
                     startListeningLoop();
                     return;
                 }
@@ -229,6 +237,15 @@ export default function Chatbot() {
                 reader.onloadend = () => sendAudioToGemini(reader.result);
             };
             mr.start();
+            // ensure recording doesn't run forever — stop after 7s to force processing
+            try {
+                recorderTimerRef.current = setTimeout(() => {
+                    const mr2 = mediaRecorderRef.current;
+                    if (mr2 && mr2.state === 'recording') {
+                        try { mr2.stop(); } catch (e) {}
+                    }
+                }, 7000);
+            } catch (e) {}
         } catch (e) {
             console.error('MediaRecorder init error', e);
         }
@@ -442,6 +459,14 @@ export default function Chatbot() {
                         <button className="chat-close-btn" onClick={hideChat} title="Close chat">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
+                    </div>
+
+                    <div className="quick-pills" aria-hidden={isDictating}>
+                        {['About SDRS', 'Services', 'Investment', 'Contact Us'].map((s, i) => (
+                            <button key={i} type="button" className="pill" onClick={() => { setInput(s); try { messageInputRef.current?.focus(); } catch (e) {} }}>
+                                {s}
+                            </button>
+                        ))}
                     </div>
 
                     <div id="messages" ref={messagesRef}>

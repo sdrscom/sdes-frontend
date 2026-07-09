@@ -86,6 +86,7 @@ export default function Chatbot() {
     const [voiceState, setVoiceState] = useState('connecting');
     const [isThinking, setIsThinking] = useState(false);
     const [selectedAttachment, setSelectedAttachment] = useState(null);
+    const [isDictating, setIsDictating] = useState(false);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
@@ -97,6 +98,7 @@ export default function Chatbot() {
     const currentAudioRef = useRef(null);
     const audioQueueRef = useRef([]);
     const silenceDetectorRef = useRef(null);
+    const speechRecognitionRef = useRef(null);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -254,8 +256,62 @@ export default function Chatbot() {
         }
     }
 
+    function stopDictation() {
+        if (speechRecognitionRef.current) {
+            try { speechRecognitionRef.current.stop(); } catch (e) {}
+        }
+        setIsDictating(false);
+    }
+
+    function startSpeechToText() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            appendMessage('Speech-to-text is not available in this browser.', 'bot');
+            return;
+        }
+
+        stopDictation();
+        closeVoice();
+
+        const recog = new SpeechRecognition();
+        recog.lang = 'en-US';
+        recog.continuous = false;
+        recog.interimResults = true;
+        recog.onstart = () => {
+            setIsDictating(true);
+            setVoiceState('listening');
+        };
+        recog.onresult = (event) => {
+            const transcript = Array.from(event.results)
+                .map(result => result[0]?.transcript || '')
+                .join(' ')
+                .trim();
+
+            if (transcript) {
+                setInput(prev => (prev ? `${prev} ${transcript}` : transcript));
+            }
+        };
+        recog.onerror = () => {
+            setIsDictating(false);
+            setVoiceState('connecting');
+        };
+        recog.onend = () => {
+            setIsDictating(false);
+            setVoiceState('connecting');
+        };
+
+        speechRecognitionRef.current = recog;
+        try {
+            recog.start();
+        } catch (e) {
+            console.error('Speech recognition init error', e);
+            setIsDictating(false);
+        }
+    }
+
     async function openVoice() {
         try {
+            stopDictation();
             setVisualizerState('connecting');
             setIsVoiceActive(true);
             await initHardware();
@@ -400,12 +456,12 @@ export default function Chatbot() {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} placeholder={isThinking ? 'Assistant is thinking…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                            }} placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
                         </div>
                         <button className="icon-btn" id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button className="icon-btn" title="Use microphone" onClick={openVoice}>
+                        <button className="icon-btn" title="Voice to Text" onClick={startSpeechToText}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                         </button>
                         <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>

@@ -12,28 +12,35 @@ const css = `
         --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
         --bot-msg-bg: #ffffff; --border-color: #e2e8f0; --text-main: #1e293b; --text-muted: #64748b;
 }
-#chat-container { width: 340px; height: 520px; max-height: calc(100vh - 40px); background: rgba(255,255,255,0.95); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(10px); border: 1px solid rgba(0, 51, 160, 0.12); }
-#chat-header { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; }
-.header-logo { width: 34px; height: 34px; background: white; border-radius: 50%; margin-right: 12px; display: flex; align-items: center; justify-content: center; color: #0033a0; font-size: 11px; font-weight: 700; }
+#chat-container { width: 340px; height: 520px; max-height: calc(100vh - 40px); background: linear-gradient(145deg, rgba(255,255,255,0.93), rgba(238,244,255,0.92)); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.9); }
+#chat-header { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.16); }
+.header-logo { width: 34px; height: 34px; background: white; border-radius: 50%; margin-right: 12px; display: flex; align-items: center; justify-content: center; color: #0033a0; font-size: 11px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(0, 51, 160, 0.12); }
 .chat-close-btn { background: rgba(255,255,255,0.12); border: none; color: white; cursor: pointer; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
 .chat-close-btn:hover { background: rgba(255,255,255,0.24); }
-.chat-toggle-button { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: #0033a0; color: #fff; border: none; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.chat-toggle-button { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: #fff; border: none; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000; transition: transform 0.2s ease, box-shadow 0.2s ease; }
 .chat-toggle-button:hover { transform: translateY(-2px); box-shadow: 0 24px 48px rgba(0, 0, 0, 0.26); }
 .chat-toggle-button .button-label { position: absolute; right: 70px; bottom: 8px; font-size: 12px; color: #fff; background: rgba(0, 51, 160, 0.95); padding: 6px 10px; border-radius: 999px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18); }
-#messages { flex: 1; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: #eef4ff; }
+#messages { flex: 1; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: linear-gradient(180deg, #f5f9ff 0%, #eef4ff 100%); }
 .message-wrapper { display: flex; flex-direction: column; max-width: 82%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
 .message { padding: 14px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
-.user .message { background: #00266b; color: white; border-bottom-right-radius: 6px; }
-.bot .message { background: #ffffff; color: #102a43; border-bottom-left-radius: 6px; border: 1px solid rgba(15, 23, 42, 0.08); }
+.user .message { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; border-bottom-right-radius: 6px; }
+.bot .message { background: rgba(255,255,255,0.98); color: #102a43; border-bottom-left-radius: 6px; border: 1px solid rgba(15, 23, 42, 0.08); }
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
 .timestamp { font-size: 11px; color: #52637a; margin-top: 6px; }
-#input-area { display: flex; align-items: center; padding: 12px 14px; background: #ffffff; border-top: 1px solid rgba(15, 23, 42, 0.08); }
+#input-area { display: flex; align-items: center; gap: 6px; padding: 12px 14px; background: rgba(255,255,255,0.84); border-top: 1px solid rgba(15, 23, 42, 0.08); backdrop-filter: blur(12px); }
 .icon-btn { background: none; border: none; cursor: pointer; color: #64748b; padding: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 50%; width: 36px; height: 36px; }
-.icon-btn:hover { color: #0033a0; background: #f1f5f9; }
-#message-input { flex: 1; border: none; outline: none; padding: 10px; font-size: 14px; background: transparent; color: #102a43; }
-#send-btn { background: #0033a0; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 8px; }
+.icon-btn:hover { color: #0033a0; background: rgba(0, 51, 160, 0.08); }
+#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.08); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); }
+#message-input:focus { border-color: rgba(0, 51, 160, 0.24); box-shadow: 0 0 0 3px rgba(0, 51, 160, 0.10); }
+#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 2px; box-shadow: 0 12px 24px rgba(0, 51, 160, 0.18); }
+#send-btn:disabled { opacity: 0.7; cursor: wait; box-shadow: none; }
+.typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 88px; }
+.typing-dot { width: 8px; height: 8px; border-radius: 50%; background: #0033a0; animation: typingPulse 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typingPulse { 0%, 80%, 100% { transform: translateY(0); opacity: 0.5; } 40% { transform: translateY(-3px); opacity: 1; } }
 
 /* VOICE OVERLAY */
 #voice-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.98); z-index: 100; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 40px 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
@@ -77,9 +84,11 @@ export default function Chatbot() {
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isVoiceActive, setIsVoiceActive] = useState(false);
     const [voiceState, setVoiceState] = useState('connecting');
+    const [isThinking, setIsThinking] = useState(false);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const micStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
@@ -116,6 +125,35 @@ export default function Chatbot() {
 
     function appendMessage(text, role) {
         setMessages(prev => [...prev, { role, text, time: new Date().toLocaleTimeString() }]);
+    }
+
+    function triggerFileUpload() {
+        fileInputRef.current?.click();
+    }
+
+    async function handleAttachmentSelect(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        event.target.value = '';
+
+        try {
+            let fileContent = '';
+            if (file.type.startsWith('text/') || /\.(txt|md|json|csv)$/i.test(file.name)) {
+                fileContent = await file.text();
+            } else {
+                fileContent = `Attached file: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+            }
+
+            const prompt = file.type.startsWith('text/') || /\.(txt|md|json|csv)$/i.test(file.name)
+                ? `User attached file "${file.name}" with content:\n${fileContent}`
+                : `User attached file "${file.name}" (${file.type || 'unknown type'}).`;
+
+            await handleSendMessage(prompt);
+        } catch (error) {
+            console.error('Attachment failed', error);
+            appendMessage('Sorry, I could not read that attachment.', 'bot');
+        }
     }
 
     async function initHardware() {
@@ -264,14 +302,16 @@ export default function Chatbot() {
         }
     }
 
-    async function handleSendMessage() {
-        const userMessage = input.trim();
+    async function handleSendMessage(messageOverride = null) {
+        const userMessage = (messageOverride ?? input).trim();
         if (!userMessage) return;
 
         appendMessage(userMessage, 'user');
         setInput('');
+        setIsThinking(true);
 
-        const history = messages
+        const historyMessages = [...messages, { role: 'user', text: userMessage }];
+        const history = historyMessages
             .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
             .map(({ role, text }) => ({
                 role: role === 'bot' ? 'model' : 'user',
@@ -299,6 +339,8 @@ export default function Chatbot() {
         } catch (error) {
             console.error('Chat request failed', error);
             appendMessage('Sorry, I could not reach the assistant right now.', 'bot');
+        } finally {
+            setIsThinking(false);
         }
     }
 
@@ -333,18 +375,37 @@ export default function Chatbot() {
                                 <div className="timestamp">{m.time}</div>
                             </div>
                         ))}
+                        {isThinking && (
+                            <div className="message-wrapper bot">
+                                <div className="message typing-indicator" aria-live="polite">
+                                    <span className="typing-dot" />
+                                    <span className="typing-dot" />
+                                    <span className="typing-dot" />
+                                </div>
+                                <div className="timestamp">Thinking…</div>
+                            </div>
+                        )}
                         <div ref={endRef} />
                     </div>
 
                     <div id="input-area">
-                        <button className="icon-btn" title="Attach File">
+                        <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleAttachmentSelect} />
+                        <button className="icon-btn" title="Attach File" onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </button>
-                        <input id="message-input" value={input} onChange={e => setInput(e.target.value)} placeholder="Type a message..." autoComplete="off" />
+                        <input id="message-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage();
+                            }
+                        }} placeholder={isThinking ? 'Assistant is thinking…' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
                         <button className="icon-btn" id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button id="send-btn" onClick={handleSendMessage}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+                        <button className="icon-btn" title="Use microphone" onClick={openVoice}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+                        </button>
+                        <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
                     </div>
 
                     <div id="voice-overlay" className={isVoiceActive ? 'active' : ''}>

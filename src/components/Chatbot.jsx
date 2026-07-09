@@ -32,8 +32,10 @@ const css = `
 #input-area { display: flex; align-items: center; gap: 6px; padding: 12px 14px; background: rgba(255,255,255,0.84); border-top: 1px solid rgba(15, 23, 42, 0.08); backdrop-filter: blur(12px); }
 .icon-btn { background: none; border: none; cursor: pointer; color: #64748b; padding: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 50%; width: 36px; height: 36px; }
 .icon-btn:hover { color: #0033a0; background: rgba(0, 51, 160, 0.08); }
-#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.08); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); }
+#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.08); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); resize: none; overflow: hidden; max-height: 160px; }
 #message-input:focus { border-color: rgba(0, 51, 160, 0.24); box-shadow: 0 0 0 3px rgba(0, 51, 160, 0.10); }
+.icon-btn.mic-active { background: rgba(0,122,255,0.12); color: #0047d9; box-shadow: 0 6px 12px rgba(0,71,217,0.08); }
+.icon-btn.voice-active { background: rgba(0,71,217,0.12); color: #0033a0; box-shadow: 0 8px 18px rgba(0,51,160,0.10); }
 #send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 2px; box-shadow: 0 12px 24px rgba(0, 51, 160, 0.18); }
 #send-btn:disabled { opacity: 0.7; cursor: wait; box-shadow: none; }
 .typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 88px; }
@@ -91,6 +93,9 @@ export default function Chatbot() {
     const messagesRef = useRef(null);
     const endRef = useRef(null);
     const fileInputRef = useRef(null);
+    const messageInputRef = useRef(null);
+    const speechBufferRef = useRef('');
+    const dictationBaseRef = useRef('');
 
     const micStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
@@ -194,7 +199,10 @@ export default function Chatbot() {
                 try { silenceDetectorRef.current.stop(); } catch (e) {}
             }
             const mr = mediaRecorderRef.current;
-            if (mr && mr.state === 'recording') mr.stop();
+            if (mr && mr.state === 'recording') {
+                try { mr.stop(); } catch (e) {}
+                setVisualizerState('processing');
+            }
         }
     }
 
@@ -210,7 +218,8 @@ export default function Chatbot() {
                 if (!isVoiceActive) return;
                 setVisualizerState('processing');
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                if (audioBlob.size < 1000) {
+                // allow smaller blobs to be processed to avoid endless listening loops
+                if (audioBlob.size < 200) {
                     startListeningLoop();
                     return;
                 }
@@ -280,16 +289,32 @@ export default function Chatbot() {
         recog.onstart = () => {
             setIsDictating(true);
             setVoiceState('listening');
+            speechBufferRef.current = '';
+            dictationBaseRef.current = input || '';
         };
         recog.onresult = (event) => {
-            const transcript = Array.from(event.results)
-                .map(result => result[0]?.transcript || '')
-                .join(' ')
-                .trim();
-
-            if (transcript) {
-                setInput(prev => (prev ? `${prev} ${transcript}` : transcript));
+            let interim = '';
+            // collect final results into buffer and show interim separately
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const r = event.results[i];
+                const t = (r[0] && r[0].transcript) ? r[0].transcript : '';
+                if (r.isFinal) {
+                    speechBufferRef.current = (speechBufferRef.current ? speechBufferRef.current + ' ' : '') + t;
+                } else {
+                    interim = interim ? interim + ' ' + t : t;
+                }
             }
+
+            const base = dictationBaseRef.current || '';
+            const composed = (base + (speechBufferRef.current ? (base ? ' ' : '') + speechBufferRef.current : '') + (interim ? (speechBufferRef.current || base ? ' ' : '') + interim : '')).trim();
+            setInput(composed);
+            // auto-resize if textarea exists
+            try {
+                if (messageInputRef.current) {
+                    messageInputRef.current.style.height = 'auto';
+                    messageInputRef.current.style.height = messageInputRef.current.scrollHeight + 'px';
+                }
+            } catch (e) {}
         };
         recog.onerror = () => {
             setIsDictating(false);
@@ -298,6 +323,8 @@ export default function Chatbot() {
         recog.onend = () => {
             setIsDictating(false);
             setVoiceState('connecting');
+            // ensure input is focused after dictation ends
+            try { messageInputRef.current?.focus(); } catch (e) {}
         };
 
         speechRecognitionRef.current = recog;
@@ -451,17 +478,26 @@ export default function Chatbot() {
                                     <button type="button" onClick={() => setSelectedAttachment(null)} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: '#0033a0', cursor: 'pointer', padding: 0 }}>×</button>
                                 </div>
                             )}
-                            <input id="message-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+                            <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
+                                setInput(e.target.value);
+                                try {
+                                    const el = messageInputRef.current;
+                                    if (el) {
+                                        el.style.height = 'auto';
+                                        el.style.height = el.scrollHeight + 'px';
+                                    }
+                                } catch (err) {}
+                            }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                            }} rows={1} placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
                         </div>
-                        <button className="icon-btn" id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
+                        <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button className="icon-btn" title="Voice to Text" onClick={startSpeechToText}>
+                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title="Voice to Text" onClick={startSpeechToText}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                         </button>
                         <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>

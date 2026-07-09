@@ -85,6 +85,7 @@ export default function Chatbot() {
     const [isVoiceActive, setIsVoiceActive] = useState(false);
     const [voiceState, setVoiceState] = useState('connecting');
     const [isThinking, setIsThinking] = useState(false);
+    const [selectedAttachment, setSelectedAttachment] = useState(null);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
@@ -136,24 +137,7 @@ export default function Chatbot() {
         if (!file) return;
 
         event.target.value = '';
-
-        try {
-            let fileContent = '';
-            if (file.type.startsWith('text/') || /\.(txt|md|json|csv)$/i.test(file.name)) {
-                fileContent = await file.text();
-            } else {
-                fileContent = `Attached file: ${file.name} (${Math.round(file.size / 1024)} KB)`;
-            }
-
-            const prompt = file.type.startsWith('text/') || /\.(txt|md|json|csv)$/i.test(file.name)
-                ? `User attached file "${file.name}" with content:\n${fileContent}`
-                : `User attached file "${file.name}" (${file.type || 'unknown type'}).`;
-
-            await handleSendMessage(prompt);
-        } catch (error) {
-            console.error('Attachment failed', error);
-            appendMessage('Sorry, I could not read that attachment.', 'bot');
-        }
+        setSelectedAttachment(file);
     }
 
     async function initHardware() {
@@ -303,14 +287,25 @@ export default function Chatbot() {
     }
 
     async function handleSendMessage(messageOverride = null) {
-        const userMessage = (messageOverride ?? input).trim();
-        if (!userMessage) return;
+        const typedMessage = (messageOverride ?? input).trim();
+        let finalMessage = typedMessage;
 
-        appendMessage(userMessage, 'user');
+        if (selectedAttachment) {
+            const attachmentLabel = selectedAttachment.name;
+            const attachmentSize = Math.round(selectedAttachment.size / 1024);
+            finalMessage = typedMessage
+                ? `${typedMessage}\n\n[Attachment: ${attachmentLabel} (${attachmentSize} KB)]`
+                : `Please review this attachment: ${attachmentLabel} (${attachmentSize} KB)`;
+        }
+
+        if (!finalMessage) return;
+
+        appendMessage(finalMessage, 'user');
         setInput('');
+        setSelectedAttachment(null);
         setIsThinking(true);
 
-        const historyMessages = [...messages, { role: 'user', text: userMessage }];
+        const historyMessages = [...messages, { role: 'user', text: finalMessage }];
         const history = historyMessages
             .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
             .map(({ role, text }) => ({
@@ -323,7 +318,7 @@ export default function Chatbot() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: userMessage,
+                    message: finalMessage,
                     history
                 })
             });
@@ -393,12 +388,20 @@ export default function Chatbot() {
                         <button className="icon-btn" title="Attach File" onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </button>
-                        <input id="message-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendMessage();
-                            }
-                        }} placeholder={isThinking ? 'Assistant is thinking…' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {selectedAttachment && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 999, background: 'rgba(0, 51, 160, 0.08)', color: '#0033a0', fontSize: 12, maxWidth: '100%' }}>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedAttachment.name}</span>
+                                    <button type="button" onClick={() => setSelectedAttachment(null)} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: '#0033a0', cursor: 'pointer', padding: 0 }}>×</button>
+                                </div>
+                            )}
+                            <input id="message-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendMessage();
+                                }
+                            }} placeholder={isThinking ? 'Assistant is thinking…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                        </div>
                         <button className="icon-btn" id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>

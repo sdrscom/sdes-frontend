@@ -12,7 +12,7 @@ const css = `
         --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
         --bot-msg-bg: #ffffff; --border-color: #e2e8f0; --text-main: #1e293b; --text-muted: #64748b;
 }
-#chat-container { width: 360px; height: 520px; max-height: calc(100vh - 40px); background: rgba(255,255,255,0.72); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(20px) saturate(120%); border: 1px solid rgba(255,255,255,0.28); }
+#chat-container { width: 360px; height: 520px; max-height: calc(100vh - 40px); background: rgba(255,255,255,0.44); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(22px) saturate(120%); border: 1px solid rgba(255,255,255,0.18); }
 #chat-header { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.16); }
 .header-logo { width: 34px; height: 34px; background: white; border-radius: 50%; margin-right: 12px; display: flex; align-items: center; justify-content: center; color: #0033a0; font-size: 11px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(0, 51, 160, 0.12); }
 .chat-close-btn { background: rgba(255,255,255,0.12); border: none; color: white; cursor: pointer; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
@@ -32,11 +32,11 @@ const css = `
 #input-area { display: flex; align-items: center; gap: 8px; padding: 12px 20px 12px 14px; background: rgba(255,255,255,0.6); border-top: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(12px); }
 .icon-btn { background: none; border: none; cursor: pointer; color: #64748b; padding: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 50%; width: 36px; height: 36px; }
 .icon-btn:hover { color: #0033a0; background: rgba(0, 51, 160, 0.08); }
-#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.06); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.85); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04); resize: none; overflow: hidden; max-height: 160px; }
+#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.06); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03); resize: none; overflow: hidden; max-height: 160px; }
 #message-input:focus { border-color: rgba(0, 51, 160, 0.24); box-shadow: 0 0 0 3px rgba(0, 51, 160, 0.10); }
 .icon-btn.mic-active { background: rgba(0,122,255,0.12); color: #0047d9; box-shadow: 0 6px 12px rgba(0,71,217,0.08); }
 .icon-btn.voice-active { background: rgba(0,71,217,0.12); color: #0033a0; box-shadow: 0 8px 18px rgba(0,51,160,0.10); }
-#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 8px; box-shadow: 0 12px 24px rgba(0, 51, 160, 0.18); flex: 0 0 auto; }
+#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 6px; box-shadow: 0 10px 20px rgba(0, 51, 160, 0.14); flex: 0 0 auto; }
 #send-btn:disabled { opacity: 0.7; cursor: wait; box-shadow: none; }
 .typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 88px; }
 .typing-dot { width: 8px; height: 8px; border-radius: 50%; background: #0033a0; animation: typingPulse 1.2s infinite ease-in-out; }

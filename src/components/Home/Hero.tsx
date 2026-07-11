@@ -97,17 +97,25 @@ export default function Hero() {
 
         <Pattern />
 
-        <div className="absolute top-44 left-0 right-0 z-10 w-full px-4 xs:px-5 sm:px-6 md:px-8 lg:px-10 xl:px-12 pt-0 pb-8 xs:pb-10 sm:pb-12 md:pb-16 lg:pb-20">
-          <div className="max-w-7xl mx-auto">
-            <h1 className="uppercase text-white font-semibold text-xs xs:text-sm sm:text-sm md:text-base lg:text-base mb-3 xs:mb-4 sm:mb-4 md:mb-2 tracking-wider sm:tracking-widest">
+        <div className="absolute inset-0 z-10 flex items-center w-full px-4 xs:px-5 sm:px-6 md:px-8 lg:px-10 xl:px-12">
+          <div className="max-w-7xl">
+            <h1 className="uppercase text-white font-bold text-3xl xs:text-4xl sm:text-4xl md:text-5xl lg:text-6xl mb-3 xs:mb-4 sm:mb-4 md:mb-2 tracking-wider sm:tracking-widest leading-tight sm:leading-tight md:leading-tight lg:leading-tight">
               {t("hero.welcome")}
             </h1>
 
-            <h1 className="text-3xl xs:text-4xl sm:text-4xl md:text-5xl lg:text-6xl font-bold w-full lg:w-10/12 xl:w-9/12 2xl:w-8/12 mb-3 xs:mb-4 sm:mb-4 md:mb-5 lg:mb-6 text-white leading-tight sm:leading-tight md:leading-tight lg:leading-tight">
-              {heroTitle}
-            </h1>
+            {heroTitle && (
+              <h1 className="text-3xl xs:text-4xl sm:text-4xl md:text-5xl lg:text-6xl font-bold w-full lg:w-10/12 xl:w-9/12 2xl:w-8/12 mb-3 xs:mb-4 sm:mb-4 md:mb-5 lg:mb-6 text-white leading-tight sm:leading-tight md:leading-tight lg:leading-tight">
+                {heroTitle}
+              </h1>
+            )}
 
-            <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 mt-6 sm:mt-7 lg:mt-8">
+            <p className="text-white/85 text-base xs:text-lg sm:text-lg md:text-xl max-w-2xl leading-relaxed mb-6 sm:mb-7 lg:mb-8">
+              Your premier gateway to the region. Managing over 350,000 m² of
+              state-of-the-art Bonded and Re-Export Zone logistics at King
+              Abdulaziz Port, Dammam.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
               <a
                 href="/services"
                 className="bg-[#2D3B76] hover:bg-[#162472] transition-all duration-300 py-3 lg:py-3.5 text-white uppercase px-6 lg:px-8 text-sm sm:text-base shadow-lg hover:shadow-xl hover:scale-105 transform w-full sm:w-auto inline-flex items-center justify-center"

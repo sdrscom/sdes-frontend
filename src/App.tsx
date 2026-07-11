@@ -11,6 +11,7 @@ import Location from "./pages/Location/Location";
 import FAQ from "./components/FAQ/FAQ";
 import NewsPage from "./pages/News/NewsPage";
 import NewsDetailPage from "./pages/News/NewsDetailPage";
+import TrackingPage from "./pages/Tracking/TrackingPage.jsx";
 import Chatbot from "./components/Chatbot.jsx";
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
           <Route path="faqs" element={<FAQ />} />
           <Route path="news" element={<NewsPage />} />
           <Route path="news/:id" element={<NewsDetailPage />} />
+          <Route path="track" element={<TrackingPage />} />
         </Route>
       </Routes>
       <Chatbot />

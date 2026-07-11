@@ -114,6 +114,12 @@ export default function Hero() {
               >
                 <span className="tracking-widest">{t("hero.services")}</span>
               </a>
+              <a
+                href="/track"
+                className="border border-white/70 hover:bg-white hover:text-[#1A2347] transition-all duration-300 py-3 lg:py-3.5 text-white uppercase px-6 lg:px-8 text-sm sm:text-base shadow-lg hover:shadow-xl hover:scale-105 transform w-full sm:w-auto inline-flex items-center justify-center"
+              >
+                <span className="tracking-widest">Track Cargo</span>
+              </a>
             </div>
           </div>
         </div>

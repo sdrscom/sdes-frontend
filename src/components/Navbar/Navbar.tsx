@@ -38,6 +38,7 @@ export default function Navbar() {
         { name: t.faqs, href: "/faqs" },
       ],
     },
+    { name: t.gallery, href: "/gallery" },
     { name: t.news, href: "/news" },
   ];
 

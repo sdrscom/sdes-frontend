@@ -650,6 +650,7 @@ export const translations = {
       location: "Location",
       faqs: "FAQs",
       news: "News",
+      gallery: "Gallery",
       login: "Login",
     },
 
@@ -721,6 +722,32 @@ export const translations = {
 
       relatedNews: {
         title: "Related News",
+      },
+    },
+
+    galleryPage: {
+      breadcrumbHome: "Home",
+      breadcrumbGallery: "Gallery",
+
+      loading: {
+        title: "Loading Gallery...",
+        subtitle: "Please wait",
+      },
+
+      header: {
+        title: "Facility Gallery",
+        description:
+          "A visual record of SDRS's bonded warehousing, customs operations, cold storage, and port logistics facilities across the Kingdom.",
+      },
+
+      emptyState: {
+        titlePrefix: "No images yet in",
+        description:
+          "This facility category doesn't have any published photos at the moment. Check back soon, or browse another category above.",
+      },
+
+      filters: {
+        all: "All Facilities",
       },
     },
   },
@@ -1353,6 +1380,7 @@ export const translations = {
       location: "الموقع",
       faqs: "الأسئلة الشائعة",
       news: "الأخبار",
+      gallery: "معرض الصور",
       login: "تسجيل الدخول",
     },
 
@@ -1423,6 +1451,32 @@ export const translations = {
 
       relatedNews: {
         title: "أخبار ذات صلة",
+      },
+    },
+
+    galleryPage: {
+      breadcrumbHome: "الرئيسية",
+      breadcrumbGallery: "معرض الصور",
+
+      loading: {
+        title: "جاري تحميل معرض الصور...",
+        subtitle: "يرجى الانتظار",
+      },
+
+      header: {
+        title: "معرض مرافقنا",
+        description:
+          "سجل مرئي لمرافق الشركة السعودية للتطوير وخدمات التصدير في المستودعات الجمركية، وعمليات الجمارك، والتخزين البارد، والخدمات اللوجستية للموانئ في جميع أنحاء المملكة.",
+      },
+
+      emptyState: {
+        titlePrefix: "لا توجد صور بعد في",
+        description:
+          "لا تحتوي فئة المرافق هذه على أي صور منشورة حاليًا. تابعنا قريبًا، أو تصفح فئة أخرى أعلاه.",
+      },
+
+      filters: {
+        all: "جميع المرافق",
       },
     },
   },

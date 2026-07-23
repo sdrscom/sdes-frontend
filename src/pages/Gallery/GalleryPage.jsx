@@ -5,6 +5,9 @@
 // `gallery-items`, fields: title, category, caption, image — see the schema
 // note left with the team). Content is managed entirely from Strapi; there is
 // no local/mock data fallback other than the loading and empty states below.
+// Visual style mirrors the rest of the site (News, Investment): the
+// #262f61 → #2D3B76 navy gradient background, the Pattern grid overlay, and
+// the #B82227 → #F27141 brand accent gradient.
 // ----------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +19,7 @@ import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const ACCENT_GRADIENT = "linear-gradient(to right, #B82227, #F27141)";
 
 // ----------------------------------------------------------------------------
 // Strapi helpers
@@ -57,7 +61,7 @@ function CategoryFilter({ categories, activeCategory, onChange, counts }) {
     <div
       role="tablist"
       aria-label="Filter gallery by facility category"
-      className="sticky top-0 z-20 -mx-6 flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 sm:mx-0 sm:flex-wrap sm:overflow-visible lg:px-0"
+      className="sticky top-0 z-20 -mx-6 flex gap-2 overflow-x-auto bg-[#262f61]/90 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-[#262f61]/75 sm:mx-0 sm:flex-wrap sm:overflow-visible lg:px-0"
     >
       {categories.map((category) => {
         const isActive = category === activeCategory;
@@ -68,14 +72,17 @@ function CategoryFilter({ categories, activeCategory, onChange, counts }) {
             aria-selected={isActive}
             onClick={() => onChange(category)}
             className={[
-              "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF8C00]",
-              isActive ? "text-white" : "text-slate-600 hover:text-[#0A192F]",
+              "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F27141]",
+              isActive
+                ? "border-transparent text-white"
+                : "border-white/15 text-gray-300 hover:text-white",
             ].join(" ")}
           >
             {isActive && (
               <motion.span
                 layoutId="active-category-pill"
-                className="absolute inset-0 rounded-full bg-[#0A192F]"
+                className="absolute inset-0 rounded-full"
+                style={{ background: ACCENT_GRADIENT }}
                 transition={{ type: "spring", stiffness: 400, damping: 32 }}
               />
             )}
@@ -84,7 +91,7 @@ function CategoryFilter({ categories, activeCategory, onChange, counts }) {
               <span
                 className={[
                   "relative z-10 rounded-full px-1.5 py-0.5 text-xs tabular-nums",
-                  isActive ? "bg-white/15 text-white" : "bg-slate-200 text-slate-500",
+                  isActive ? "bg-white/20 text-white" : "bg-white/10 text-gray-300",
                 ].join(" ")}
               >
                 {counts[category]}
@@ -117,10 +124,10 @@ function GalleryCard({ item, onOpen, spanVariant }) {
       transition={{ duration: 0.35, ease: "easeOut" }}
       onClick={() => onOpen(item)}
       className={[
-        "group relative w-full overflow-hidden rounded-xl bg-[#1E293B] text-left shadow-[0_1px_2px_rgba(10,25,47,0.06),0_8px_24px_-8px_rgba(10,25,47,0.12)] outline-none transition-shadow duration-300 hover:-translate-y-1 hover:shadow-[0_4px_12px_rgba(10,25,47,0.10),0_24px_48px_-12px_rgba(10,25,47,0.22)] focus-visible:-translate-y-1 focus-visible:ring-2 focus-visible:ring-[#FF8C00] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50",
+        "group relative w-full overflow-hidden rounded-3xl bg-white/[0.06] text-left shadow-lg outline-none transition-all duration-300 hover:-translate-y-1 focus-visible:-translate-y-1 focus-visible:ring-2 focus-visible:ring-[#F27141] focus-visible:ring-offset-2 focus-visible:ring-offset-[#262f61]",
+        "border border-white/15",
         aspectByVariant[spanVariant],
       ].join(" ")}
-      style={{ transition: "transform 300ms ease, box-shadow 300ms ease" }}
       aria-label={`Open ${item.title} in full view`}
     >
       <img
@@ -130,9 +137,12 @@ function GalleryCard({ item, onOpen, spanVariant }) {
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
       />
 
-      <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-[#0A192F]/90 via-[#0A192F]/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
+      <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-[#161c3f]/95 via-[#161c3f]/25 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
         <div className="translate-y-3 p-4 transition-transform duration-300 group-hover:translate-y-0 group-focus-visible:translate-y-0">
-          <span className="inline-flex items-center rounded-full bg-[#FF8C00]/90 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#0A192F]">
+          <span
+            className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white"
+            style={{ background: ACCENT_GRADIENT }}
+          >
             {item.category}
           </span>
           <h3 className="mt-2 text-sm font-semibold leading-snug text-white">{item.title}</h3>
@@ -140,7 +150,7 @@ function GalleryCard({ item, onOpen, spanVariant }) {
       </div>
 
       <div className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 opacity-0 shadow-sm transition-opacity duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
-        <Search className="h-4 w-4 text-[#0A192F]" aria-hidden="true" />
+        <Search className="h-4 w-4 text-[#262f61]" aria-hidden="true" />
       </div>
     </motion.button>
   );
@@ -160,9 +170,9 @@ function GallerySkeleton({ count = 8, label }) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className={`relative overflow-hidden rounded-xl bg-slate-200 ${aspects[i % aspects.length]}`}
+          className={`relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] ${aspects[i % aspects.length]}`}
         >
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         </div>
       ))}
       <span className="sr-only">{label}</span>
@@ -175,14 +185,14 @@ function GallerySkeleton({ count = 8, label }) {
 // ----------------------------------------------------------------------------
 function EmptyState({ category, title, description }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-        <ImageOff className="h-6 w-6 text-slate-400" aria-hidden="true" />
+    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/20 bg-white/[0.04] px-6 py-20 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10">
+        <ImageOff className="h-6 w-6 text-gray-300" aria-hidden="true" />
       </div>
-      <h3 className="mt-4 text-base font-semibold text-[#0A192F]">
+      <h3 className="mt-4 text-base font-semibold text-white">
         {title} {category}
       </h3>
-      <p className="mt-1.5 max-w-sm text-sm text-slate-500">{description}</p>
+      <p className="mt-1.5 max-w-sm text-sm text-gray-300">{description}</p>
     </div>
   );
 }
@@ -231,7 +241,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A192F]/95 p-4 backdrop-blur-sm sm:p-8"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#161c3f]/95 p-4 backdrop-blur-sm sm:p-8"
           role="dialog"
           aria-modal="true"
           aria-label={`${item.title} — full view`}
@@ -240,7 +250,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF8C00] sm:right-6 sm:top-6"
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F27141] sm:right-6 sm:top-6"
             aria-label="Close full view"
           >
             <X className="h-5 w-5" aria-hidden="true" />
@@ -249,7 +259,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
           {items.length > 1 && (
             <button
               onClick={goPrev}
-              className="absolute left-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF8C00] sm:left-6"
+              className="absolute left-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F27141] sm:left-6"
               aria-label="Previous image"
             >
               <ChevronLeft className="h-6 w-6" aria-hidden="true" />
@@ -259,7 +269,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
           {items.length > 1 && (
             <button
               onClick={goNext}
-              className="absolute right-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF8C00] sm:right-6"
+              className="absolute right-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F27141] sm:right-6"
               aria-label="Next image"
             >
               <ChevronRight className="h-6 w-6" aria-hidden="true" />
@@ -276,7 +286,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
             className="flex max-h-full w-full max-w-5xl flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative flex max-h-[70vh] w-full items-center justify-center overflow-hidden rounded-lg bg-[#1E293B]">
+            <div className="relative flex max-h-[70vh] w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
               <img
                 src={getStrapiImageUrl(item.image, "large")}
                 alt={item.title}
@@ -285,14 +295,17 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
             </div>
 
             <div className="mt-5 flex w-full flex-col items-center gap-2 text-center">
-              <span className="inline-flex items-center rounded-full bg-[#FF8C00] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#0A192F]">
+              <span
+                className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white"
+                style={{ background: ACCENT_GRADIENT }}
+              >
                 {item.category}
               </span>
               <h2 className="text-lg font-semibold text-white sm:text-xl">{item.title}</h2>
               {item.caption && (
-                <p className="max-w-2xl text-sm text-slate-300">{item.caption}</p>
+                <p className="max-w-2xl text-sm text-gray-300">{item.caption}</p>
               )}
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-gray-400">
                 {activeIndex + 1} / {items.length}
               </span>
             </div>
@@ -309,6 +322,7 @@ function LightboxModal({ items, activeIndex, onClose, onNavigate }) {
 // ----------------------------------------------------------------------------
 export default function GalleryPage() {
   const { language } = useLanguage();
+  const isRTL = language === "ar";
   const t = translations[language].galleryPage;
 
   const [items, setItems] = useState([]);
@@ -380,55 +394,42 @@ export default function GalleryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="relative overflow-hidden bg-[#0A192F] pt-24">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.06]"
-          style={{
-            backgroundImage:
-              "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-          }}
-          aria-hidden="true"
-        />
-        <Pattern />
-        <div className="absolute inset-x-0 bottom-0 h-[3px] bg-gradient-to-r from-[#FF8C00] via-[#FF8C00]/60 to-transparent" />
+    <section
+      className="relative min-h-screen overflow-hidden pb-24 pt-32"
+      style={{ background: "linear-gradient(to bottom right, #262f61, #2D3B76)" }}
+      dir={isRTL ? "rtl" : "ltr"}
+    >
+      <Pattern />
 
-        <div className="relative mx-auto max-w-7xl px-6 py-14 sm:py-16 lg:px-8">
-          <nav aria-label="Breadcrumb" className="mb-6">
-            <ol className="flex flex-wrap items-center gap-1.5 text-sm text-white/60">
-              <li className="flex items-center gap-1.5">
-                <a href="/" className="transition-colors hover:text-[#FF8C00]">
-                  {t.breadcrumbHome}
-                </a>
-                <ChevronRight className="h-3.5 w-3.5 text-white/30" aria-hidden="true" />
-              </li>
-              <li className="font-medium text-white">{t.breadcrumbGallery}</li>
-            </ol>
-          </nav>
+      <div className="relative mx-auto max-w-7xl px-6">
+        {/* Breadcrumb */}
+        <nav aria-label="Breadcrumb" className="mb-6">
+          <ol className="flex flex-wrap items-center gap-1.5 text-sm text-gray-300">
+            <li className="flex items-center gap-1.5">
+              <a href="/" className="transition-colors hover:text-[#F27141]">
+                {t.breadcrumbHome}
+              </a>
+              <ChevronRight className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
+            </li>
+            <li className="font-medium text-white">{t.breadcrumbGallery}</li>
+          </ol>
+        </nav>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl"
-          >
+        {/* Header */}
+        <div className="mb-12 max-w-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
             {t.header.title}
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.08, ease: "easeOut" }}
-            className="mt-4 max-w-2xl text-base text-white/80 sm:text-lg"
-          >
-            {t.header.description}
-          </motion.p>
+          </h1>
+          <div className="pt-4">
+            <span
+              className="block h-1 w-24 rounded-full sm:h-[5px]"
+              style={{ background: ACCENT_GRADIENT }}
+            />
+          </div>
+          <p className="mt-6 text-base text-gray-200 sm:text-lg">{t.header.description}</p>
         </div>
-      </header>
 
-      {/* Body */}
-      <main className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
+        {/* Filters + Grid */}
         {!isLoading && items.length > 0 && (
           <CategoryFilter
             categories={categories}
@@ -465,7 +466,7 @@ export default function GalleryPage() {
             </motion.div>
           )}
         </div>
-      </main>
+      </div>
 
       <LightboxModal
         items={filteredItems}
@@ -473,6 +474,6 @@ export default function GalleryPage() {
         onClose={() => setLightboxIndex(null)}
         onNavigate={setLightboxIndex}
       />
-    </div>
+    </section>
   );
 }

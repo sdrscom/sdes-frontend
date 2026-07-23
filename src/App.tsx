@@ -13,6 +13,7 @@ import NewsPage from "./pages/News/NewsPage";
 import NewsDetailPage from "./pages/News/NewsDetailPage";
 import TrackingPage from "./pages/Tracking/TrackingPage.jsx";
 import GalleryPage from "./pages/Gallery/GalleryPage.jsx";
+import CareerPage from "./pages/Career/CareerPage.jsx";
 import Chatbot from "./components/Chatbot.jsx";
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
           <Route path="news/:id" element={<NewsDetailPage />} />
           <Route path="track" element={<TrackingPage />} />
           <Route path="gallery" element={<GalleryPage />} />
+          <Route path="careers" element={<CareerPage />} />
         </Route>
       </Routes>
       <Chatbot />

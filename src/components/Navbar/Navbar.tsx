@@ -39,6 +39,7 @@ export default function Navbar() {
       ],
     },
     { name: t.gallery, href: "/gallery" },
+    { name: t.careers, href: "/careers" },
     { name: t.news, href: "/news" },
   ];
 

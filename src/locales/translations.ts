@@ -651,6 +651,7 @@ export const translations = {
       faqs: "FAQs",
       news: "News",
       gallery: "Gallery",
+      careers: "Careers",
       login: "Login",
     },
 
@@ -748,6 +749,92 @@ export const translations = {
 
       filters: {
         all: "All Facilities",
+      },
+    },
+
+    careerPage: {
+      breadcrumbHome: "Home",
+      breadcrumbCareers: "Careers",
+      eyebrow: "Careers",
+
+      header: {
+        title: "Join the team keeping cargo moving.",
+        description:
+          "From port operations to bonded warehousing, SDRS runs on people who take customs, logistics, and fleet execution seriously. See what's open.",
+      },
+
+      search: {
+        placeholder: 'Search roles, e.g. "customs" or "fleet"',
+      },
+
+      filters: {
+        allRoles: "All roles",
+        anyLocationType: "Any location type",
+        anyJobType: "Any job type",
+        locationTypes: {
+          Remote: "Remote",
+          Hybrid: "Hybrid",
+          "On-site": "On-site",
+        },
+        jobTypes: {
+          "Full-Time": "Full-Time",
+          Contract: "Contract",
+          "Part-Time": "Part-Time",
+        },
+      },
+
+      rolesFound: {
+        singular: "open role",
+        plural: "open roles",
+      },
+
+      loading: {
+        title: "Loading open roles...",
+      },
+
+      emptyState: {
+        title: "No roles match those filters",
+        description: "Try a broader location type, or clear your search to see every open role.",
+        clearButton: "Clear all filters",
+      },
+
+      card: {
+        featured: "Featured",
+        viewDetails: "View details & apply",
+      },
+
+      timeAgo: {
+        today: "Today",
+        oneDayAgo: "1 day ago",
+        daysAgo: "days ago",
+        monthsAgo: "mo ago",
+      },
+
+      detail: {
+        back: "Back to all roles",
+        aboutRole: "About the role",
+        requirements: "What we're looking for",
+        applyTitle: "Apply for this role",
+        submit: "Submit application",
+        submitting: "Submitting...",
+        submitError: "We couldn't submit your application right now. Please try again in a moment.",
+
+        fields: {
+          firstName: "First name",
+          lastName: "Last name",
+          email: "Email",
+          phone: "Phone",
+          portfolio: "Portfolio / LinkedIn URL",
+          resume: "Resume (PDF or DOCX)",
+          coverNote: "Cover note (optional)",
+          coverNotePlaceholder: "Anything you'd like us to know?",
+        },
+
+        success: {
+          title: "Application submitted",
+          descriptionPrefix: "Thanks for applying to",
+          descriptionSuffix: "Our team reviews every application — you'll hear from us within 5 business days.",
+        },
       },
     },
   },
@@ -1381,6 +1468,7 @@ export const translations = {
       faqs: "الأسئلة الشائعة",
       news: "الأخبار",
       gallery: "معرض الصور",
+      careers: "الوظائف",
       login: "تسجيل الدخول",
     },
 
@@ -1477,6 +1565,92 @@ export const translations = {
 
       filters: {
         all: "جميع المرافق",
+      },
+    },
+
+    careerPage: {
+      breadcrumbHome: "الرئيسية",
+      breadcrumbCareers: "الوظائف",
+      eyebrow: "الوظائف",
+
+      header: {
+        title: "انضم إلى الفريق الذي يبقي الشحن يتحرك.",
+        description:
+          "من عمليات الموانئ إلى المستودعات الجمركية، تعتمد الشركة السعودية للتطوير وخدمات التصدير على أشخاص يأخذون الجمارك واللوجستيات وتنفيذ الأسطول على محمل الجد. اطّلع على الشواغر المتاحة.",
+      },
+
+      search: {
+        placeholder: "ابحث عن وظيفة، مثل \"الجمارك\" أو \"الأسطول\"",
+      },
+
+      filters: {
+        allRoles: "جميع الوظائف",
+        anyLocationType: "أي نوع موقع",
+        anyJobType: "أي نوع وظيفة",
+        locationTypes: {
+          Remote: "عن بُعد",
+          Hybrid: "مختلط",
+          "On-site": "في الموقع",
+        },
+        jobTypes: {
+          "Full-Time": "دوام كامل",
+          Contract: "عقد",
+          "Part-Time": "دوام جزئي",
+        },
+      },
+
+      rolesFound: {
+        singular: "وظيفة شاغرة",
+        plural: "وظائف شاغرة",
+      },
+
+      loading: {
+        title: "جاري تحميل الوظائف الشاغرة...",
+      },
+
+      emptyState: {
+        title: "لا توجد وظائف مطابقة لهذه الفلاتر",
+        description: "جرّب نوع موقع أوسع، أو امسح بحثك لعرض جميع الوظائف الشاغرة.",
+        clearButton: "مسح جميع الفلاتر",
+      },
+
+      card: {
+        featured: "مميزة",
+        viewDetails: "عرض التفاصيل والتقديم",
+      },
+
+      timeAgo: {
+        today: "اليوم",
+        oneDayAgo: "منذ يوم واحد",
+        daysAgo: "أيام مضت",
+        monthsAgo: "أشهر مضت",
+      },
+
+      detail: {
+        back: "العودة إلى جميع الوظائف",
+        aboutRole: "عن الوظيفة",
+        requirements: "ما الذي نبحث عنه",
+        applyTitle: "التقديم على هذه الوظيفة",
+        submit: "إرسال الطلب",
+        submitting: "جارٍ الإرسال...",
+        submitError: "تعذّر إرسال طلبك حالياً. يرجى المحاولة مرة أخرى بعد قليل.",
+
+        fields: {
+          firstName: "الاسم الأول",
+          lastName: "اسم العائلة",
+          email: "البريد الإلكتروني",
+          phone: "رقم الهاتف",
+          portfolio: "رابط الأعمال / لينكد إن",
+          resume: "السيرة الذاتية (PDF أو DOCX)",
+          coverNote: "ملاحظة تعريفية (اختياري)",
+          coverNotePlaceholder: "أي شيء تودّ إخبارنا به؟",
+        },
+
+        success: {
+          title: "تم إرسال الطلب",
+          descriptionPrefix: "شكراً لتقديمك على وظيفة",
+          descriptionSuffix: "يقوم فريقنا بمراجعة كل طلب — ستسمع منّا خلال 5 أيام عمل.",
+        },
       },
     },
   },

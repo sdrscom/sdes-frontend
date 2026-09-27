@@ -405,8 +405,7 @@ export default function Chatbot() {
         setSelectedAttachment(null);
         setIsThinking(true);
 
-        const historyMessages = [...messages, { role: 'user', text: finalMessage }];
-        const history = historyMessages
+        const history = messages
             .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
             .map(({ role, text }) => ({
                 role: role === 'bot' ? 'model' : 'user',

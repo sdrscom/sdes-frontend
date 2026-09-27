@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
+import { readFunctionCalls } from './readFunctionCalls.js';
 
 dotenv.config();
 
@@ -52,6 +53,17 @@ app.post('/api/chat', async (req, res) => {
             sanitizedHistory.shift();
         }
 
+        // The widget also sends the current user turn inside history. Drop that copy
+        // so the request does not contain two user messages in a row.
+        const incoming = String(message || '').trim();
+        while (sanitizedHistory.length > 0) {
+            const last = sanitizedHistory[sanitizedHistory.length - 1];
+            if (last.role !== 'user') break;
+            const lastText = (last.parts || []).map(part => part?.text || '').join('').trim();
+            if (lastText !== incoming) break;
+            sanitizedHistory.pop();
+        }
+
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: systemInstruction,
@@ -61,8 +73,7 @@ app.post('/api/chat', async (req, res) => {
         const chat = model.startChat({ history: sanitizedHistory });
 
         let result = await chat.sendMessage(message);
-        const calls = result?.response?.functionCalls;
-        const callList = Array.isArray(calls) ? calls : (calls ? [calls] : []);
+        const callList = readFunctionCalls(result?.response);
 
         if (callList.length > 0) {
             const toolCall = callList[0];

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from '../knowledgeBase.js';
 import { chatbotTools } from '../tools.js';
+import { readFunctionCalls } from '../readFunctionCalls.js';
 
 const calls = [];
 
@@ -43,5 +44,10 @@ assert.match(sentInstruction, /SDRS Intelligent Trade Assistant/);
 assert.match(sentInstruction, /King Abdulaziz Port/);
 assert.match(sentInstruction, /0% VAT/);
 assert.equal(reply, 'I am the SDRS Intelligent Trade Assistant.');
+assert.deepEqual(readFunctionCalls(result.response), []);
+assert.equal(typeof result.response.functionCalls, 'function');
+assert.deepEqual(readFunctionCalls({
+    functionCalls: () => [{ name: 'track_container', args: { container_id: 'ABCU1234567' } }]
+}), [{ name: 'track_container', args: { container_id: 'ABCU1234567' } }]);
 
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');

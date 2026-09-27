@@ -84,7 +84,12 @@ app.post('/api/chat', async (req, res) => {
         res.end();
     } catch (error) {
         console.error('\n❌ Text Chat Error:', error);
-        res.status(500).send('Connection error with AI server.');
+        // The widget always shows its own generic apology to the visitor regardless
+        // of this body, so it's safe to include a diagnostic reason here — it helps
+        // tell apart a Gemini quota/rate-limit error (429), a bad-request/config
+        // error (400), and a genuine network failure without exposing secrets.
+        const status = error?.status || error?.response?.status;
+        res.status(500).send(`Connection error with AI server.${status ? ` [status:${status}]` : ''} ${error?.message || ''}`.trim());
     }
 });
 

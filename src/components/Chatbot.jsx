@@ -431,7 +431,13 @@ export default function Chatbot() {
             const botReply = await response.text();
             if (!response.ok) {
                 console.error('Chat API error', response.status, botReply);
-                appendMessage('Sorry, the assistant could not respond right now.', 'bot');
+                // A 429 here means the AI provider's request quota is exhausted, not a
+                // bug in this widget — retrying immediately will not help. Say so
+                // honestly instead of implying something is broken.
+                const message = response.status === 429
+                    ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
+                    : 'Sorry, the assistant could not respond right now.';
+                appendMessage(message, 'bot');
                 return;
             }
 

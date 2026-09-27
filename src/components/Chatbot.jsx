@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
+import { detectVoiceLanguage } from '../utils/voiceLanguage.js';
 
 const getBackendUrl = () => {
     return window.location.hostname === 'localhost' 
@@ -84,7 +85,7 @@ const css = `
 
 export default function Chatbot() {
     const [messages, setMessages] = useState([
-        { role: 'bot', text: 'Hello! I am the SDRS AI Assistant. How can I help you today?', time: 'Just now' }
+        { role: 'bot', text: 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?', time: 'Just now' }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -164,8 +165,7 @@ export default function Chatbot() {
 
     async function playHumanVoice(text) {
         stopAudioEngine();
-        const isUrdu = /[\u0600-\u06FF]/.test(text) || text.toLowerCase().includes('aur') || text.toLowerCase().includes('hai');
-        const lang = isUrdu ? 'ur' : 'en-US';
+        const lang = detectVoiceLanguage(text);
 
         audioQueueRef.current = text.match(/[^.!?،۔]+[.!?،۔]+/g) || [text];
         setVisualizerState('speaking');
@@ -256,7 +256,16 @@ export default function Chatbot() {
     }
 
     const backendUrl = getBackendUrl();
-    const initialBotGreeting = 'Hello! I am the SDRS AI Assistant. How can I help you today?';
+    const initialBotGreeting = 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?';
+
+    // Client-side placeholders shown when a request fails. These never came from
+    // Gemini, so they must not be replayed back into the model's history.
+    const clientErrorPlaceholders = new Set([
+        'Sorry, the assistant could not respond right now.',
+        'Sorry, I could not reach the assistant right now.',
+        'Sorry, I could not generate a reply right now.',
+        'Speech-to-text is not available in this browser.'
+    ]);
 
     async function sendAudioToGemini(base64Audio) {
         if (!isVoiceActive) return;
@@ -407,6 +416,7 @@ export default function Chatbot() {
 
         const history = messages
             .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
+            .filter((msg) => !(msg.role === 'bot' && clientErrorPlaceholders.has(msg.text)))
             .map(({ role, text }) => ({
                 role: role === 'bot' ? 'model' : 'user',
                 parts: [{ text }]
@@ -453,7 +463,7 @@ export default function Chatbot() {
                     <div id="chat-header">
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <div className="header-logo">SDRS</div>
-                            <div>SDRS AI Assistant</div>
+                            <div>SDRS Intelligent Trade Assistant</div>
                         </div>
                         <button className="chat-close-btn" onClick={hideChat} title="Close chat">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -471,7 +481,7 @@ export default function Chatbot() {
                     <div id="messages" ref={messagesRef}>
                         {messages.map((m, idx) => (
                             <div key={idx} className={`message-wrapper ${m.role}`}>
-                                <div className="message" dangerouslySetInnerHTML={m.role === 'bot' ? { __html: marked.parse(m.text) } : undefined}>
+                                <div className="message" dir="auto" dangerouslySetInnerHTML={m.role === 'bot' ? { __html: marked.parse(m.text) } : undefined}>
                                     {m.role !== 'bot' ? m.text : null}
                                 </div>
                                 <div className="timestamp">{m.time}</div>
@@ -516,7 +526,7 @@ export default function Chatbot() {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} rows={1} placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                            }} rows={1} dir="auto" placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
                         </div>
                         <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>

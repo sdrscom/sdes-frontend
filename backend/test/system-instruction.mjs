@@ -50,6 +50,8 @@ assert.match(sentInstruction, /www\.sdrs\.com\.sa\/careers/);
 assert.match(sentInstruction, /www\.sdrs\.com\.sa\/faqs/);
 assert.match(sentInstruction, /logipoint\.sa/);
 assert.match(sentInstruction, /CMS-only/);
+assert.match(sentInstruction, /Greetings and small talk/);
+assert.match(sentInstruction, /Do not use bullets.*for these/);
 assert.equal(reply, 'I am the SDRS Intelligent Trade Assistant.');
 assert.deepEqual(readFunctionCalls(result.response), []);
 assert.equal(typeof result.response.functionCalls, 'function');
@@ -73,4 +75,38 @@ assert.equal(tracking.status, undefined);
 const lead = await executeTool('capture_lead', { name: 'A', email: 'a@example.com', inquiry: 'warehouse quote' });
 assert.equal(lead.saved, false);
 
+// Regression: the real SDK's response.functionCalls() throws for a bad finish reason
+// (SAFETY, RECITATION, LANGUAGE, OTHER) even when the model never asked for a tool.
+// That used to crash the whole /api/chat request with a 500 before any text was read.
+globalThis.fetch = async () => new Response(JSON.stringify({
+    candidates: [{
+        content: { role: 'model', parts: [{ text: 'SDRS runs six service lines from Dammam.' }] },
+        finishReason: 'RECITATION',
+        index: 0
+    }]
+}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+const blockedResult = await new GoogleGenerativeAI('test-key')
+    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .startChat({ history: [] })
+    .sendMessage('Tell me about Facilities');
+
+assert.doesNotThrow(() => readFunctionCalls(blockedResult.response), 'readFunctionCalls must not throw on a blocked finish reason');
+assert.deepEqual(readFunctionCalls(blockedResult.response), []);
+assert.equal(readReplyText(blockedResult.response), 'SDRS runs six service lines from Dammam.');
+
+// Fully blocked prompt: no candidates at all, only promptFeedback.
+globalThis.fetch = async () => new Response(JSON.stringify({
+    promptFeedback: { blockReason: 'OTHER' }
+}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+const fullyBlockedResult = await new GoogleGenerativeAI('test-key')
+    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .startChat({ history: [] })
+    .sendMessage('How are you');
+
+assert.doesNotThrow(() => readFunctionCalls(fullyBlockedResult.response));
+assert.equal(readReplyText(fullyBlockedResult.response), '');
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
+console.log('Blocked finish reasons no longer crash /api/chat.');

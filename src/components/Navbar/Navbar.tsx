@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { ChevronDown, Menu, X, LogIn } from "lucide-react";
 import logo from "../../assets/Logo-1.png";
 import { useLocation } from "react-router-dom";
@@ -17,6 +17,8 @@ export default function Navbar() {
   const [lastScrollY, setLastScrollY] = useState(0);
 
   const navRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const navLinksRef = useRef<(HTMLAnchorElement | HTMLButtonElement | null)[]>(
     []
   );
@@ -97,6 +99,57 @@ export default function Navbar() {
     }
   }, [activeLink]);
 
+  // Shrink the bar just enough to keep every item on screen at 100% zoom.
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const row = rowRef.current;
+    if (!shell || !row) return;
+
+    let cancelled = false;
+
+    const fit = () => {
+      if (cancelled) return;
+      const children = Array.from(row.children) as HTMLElement[];
+      shell.style.overflow = "hidden";
+      row.style.zoom = "1";
+      row.style.width = "max-content";
+
+      const previousFlex = children.map((child) => child.style.flex);
+      for (const child of children) {
+        if (getComputedStyle(child).display === "none") continue;
+        child.style.flex = "0 0 auto";
+      }
+
+      const needed = children.reduce((sum, child) => {
+        if (getComputedStyle(child).display === "none") return sum;
+        return sum + child.offsetWidth;
+      }, 0);
+
+      children.forEach((child, index) => {
+        child.style.flex = previousFlex[index];
+      });
+
+      const available = shell.clientWidth;
+      if (available > 0 && needed > available + 1) {
+        row.style.zoom = String((available - 1) / needed);
+        row.style.width = `${needed}px`;
+      } else {
+        row.style.zoom = "1";
+        row.style.width = "100%";
+      }
+      shell.style.overflow = "";
+    };
+
+    fit();
+    document.fonts?.ready.then(fit);
+    const observer = new ResizeObserver(fit);
+    observer.observe(shell);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [language]);
+
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
     if (isMenuOpen) setActiveDropdown(null);
@@ -134,7 +187,8 @@ export default function Navbar() {
           : "-translate-y-20 opacity-0 pointer-events-none"
       }`}
     >
-      <div className="relative flex items-center w-full justify-between">
+      <div ref={shellRef} className="w-full">
+      <div ref={rowRef} className="relative flex items-center w-full justify-between">
         {/* Logo */}
         <div className="p-2">
           <a href="/">
@@ -223,7 +277,7 @@ export default function Navbar() {
 
           <button
             onClick={handleLogin}
-            className="group relative flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-white transition-all duration-300 overflow-hidden shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+            className="group relative flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-white whitespace-nowrap transition-all duration-300 overflow-hidden shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
             style={{
               background: "linear-gradient(to right, #B82227, #F27141)",
             }}
@@ -234,7 +288,7 @@ export default function Navbar() {
           </button>
           <button
             onClick={handleOperationPortal}
-            className="group relative flex items-center gap-2 py-3 px-4 rounded-xl font-semibold text-white transition-all duration-300 overflow-hidden shadow-lg hover:scale-105 active:scale-95"
+            className="group relative flex items-center gap-2 py-3 px-4 rounded-xl font-semibold text-white whitespace-nowrap transition-all duration-300 overflow-hidden shadow-lg hover:scale-105 active:scale-95"
             style={{
               background: "linear-gradient(to right, #1a5276, #2980b9)",
             }}
@@ -253,6 +307,7 @@ export default function Navbar() {
             {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
+      </div>
       </div>
 
       {/* Mobile Menu */}

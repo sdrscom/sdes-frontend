@@ -5,6 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
+import { sanitizeHistoryForGemini } from './chatHistory.js';
 
 dotenv.config();
 
@@ -33,41 +34,18 @@ app.post('/api/chat', async (req, res) => {
     try {
         const { message, history } = req.body;
 
-        // Normalize and sanitize incoming history so Gemini receives a valid chat start.
-        const normalizeHistory = (hist) => {
-            if (!Array.isArray(hist)) return [];
-            return hist.map(h => {
-                const roleRaw = (h.role || '').toString().toLowerCase();
-                const role = (roleRaw === 'bot' || roleRaw === 'assistant' || roleRaw === 'model') ? 'model' : 'user';
-                let parts = h.parts;
-                if (!Array.isArray(parts)) {
-                    parts = [{ text: h.text || (typeof h === 'string' ? h : '') }];
-                }
-                return { role, parts };
-            });
-        };
-
-        let sanitizedHistory = normalizeHistory(history || []);
-        // Gemini requires the first content to be role 'user'. Drop leading non-user entries.
-        while (sanitizedHistory.length > 0 && sanitizedHistory[0].role !== 'user') {
-            sanitizedHistory.shift();
-        }
-
-        // The widget also sends the current user turn inside history. Drop that copy
-        // so the request does not contain two user messages in a row.
-        const incoming = String(message || '').trim();
-        while (sanitizedHistory.length > 0) {
-            const last = sanitizedHistory[sanitizedHistory.length - 1];
-            if (last.role !== 'user') break;
-            const lastText = (last.parts || []).map(part => part?.text || '').join('').trim();
-            if (lastText !== incoming) break;
-            sanitizedHistory.pop();
-        }
+        // Normalize and sanitize incoming history so Gemini always receives a valid,
+        // strictly-alternating chat transcript, no matter what the client sent.
+        const sanitizedHistory = sanitizeHistoryForGemini(history, message);
 
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: systemInstruction,
-            tools: chatbotTools
+            tools: chatbotTools,
+            // Casual and short factual replies don't need extended internal reasoning.
+            // Keeping a small thinking budget cuts latency well below Vercel's function
+            // timeout, which was likely why some replies hung for 60+ seconds and failed.
+            generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
         });
 
         const chat = model.startChat({ history: sanitizedHistory });
@@ -124,7 +102,10 @@ app.post('/api/voice-chat', async (req, res) => {
         const voiceModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: systemInstruction,
-            generationConfig: { responseMimeType: 'application/json' }
+            generationConfig: {
+                responseMimeType: 'application/json',
+                thinkingConfig: { thinkingBudget: 0 }
+            }
         });
 
         const prompt = `Listen to the audio. First, transcribe exactly what the user said in their original language. Then, provide a helpful answer as the SDRS AI Assistant. CRITICAL: You MUST write your 'reply' in the EXACT SAME LANGUAGE that the user spoke in the audio (e.g., if they speak Urdu, write your reply in Urdu script. If they speak Arabic, reply in Arabic). Output ONLY valid JSON. Format: {"transcript": "what they said", "reply": "your answer"}`;

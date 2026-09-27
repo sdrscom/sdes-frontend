@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from '../knowledgeBase.js';
 import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
+import { sanitizeHistoryForGemini, enforceAlternatingRoles } from '../chatHistory.js';
 
 const calls = [];
 
@@ -31,7 +32,8 @@ const systemInstruction = loadKnowledgeBase();
 const model = new GoogleGenerativeAI('test-key').getGenerativeModel({
     model: 'gemini-2.5-flash',
     systemInstruction,
-    tools: chatbotTools
+    tools: chatbotTools,
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
 });
 
 const result = await model.startChat({ history: [] }).sendMessage('What are you?');
@@ -40,6 +42,7 @@ const body = calls[0]?.body;
 const sentInstruction = JSON.stringify(body?.systemInstruction ?? '');
 
 assert.equal(calls.length, 1, 'expected one Gemini request');
+assert.equal(body?.generationConfig?.thinkingConfig?.thinkingBudget, 0, 'thinking should be disabled to keep replies fast');
 assert.match(sentInstruction, /SDRS Intelligent Trade Assistant/);
 assert.match(sentInstruction, /King Abdulaziz Port/);
 assert.match(sentInstruction, /0% VAT/);
@@ -108,5 +111,49 @@ const fullyBlockedResult = await new GoogleGenerativeAI('test-key')
 assert.doesNotThrow(() => readFunctionCalls(fullyBlockedResult.response));
 assert.equal(readReplyText(fullyBlockedResult.response), '');
 
+// Regression: Gemini's chat API rejects a transcript that doesn't strictly
+// alternate user/model turns. This happened live whenever a prior turn failed —
+// its unanswered user message stayed in history, so the next request contained
+// two user turns in a row and Gemini returned a fast 400, surfaced to users as
+// "Sorry, the assistant could not respond right now."
+assert.deepEqual(
+    enforceAlternatingRoles([
+        { role: 'user', parts: [{ text: 'Tell me about Facilities' }] }, // orphaned: never answered
+        { role: 'user', parts: [{ text: 'How are you' }] }
+    ]),
+    [{ role: 'user', parts: [{ text: 'Tell me about Facilities' }, { text: 'How are you' }] }],
+    'consecutive user turns must be merged into one, not sent to Gemini as-is'
+);
+
+assert.deepEqual(
+    enforceAlternatingRoles([
+        { role: 'user', parts: [{ text: 'Hi' }] },
+        { role: 'model', parts: [{ text: 'Hello!' }] },
+        { role: 'model', parts: [{ text: 'How can I help?' }] }, // duplicate model turn
+        { role: 'user', parts: [{ text: 'Tell me about Services' }] }
+    ]),
+    [
+        { role: 'user', parts: [{ text: 'Hi' }] },
+        { role: 'model', parts: [{ text: 'Hello!' }, { text: 'How can I help?' }] },
+        { role: 'user', parts: [{ text: 'Tell me about Services' }] }
+    ]
+);
+
+assert.deepEqual(
+    sanitizeHistoryForGemini([
+        { role: 'model', parts: [{ text: 'leading model turn, must be dropped' }] },
+        { role: 'user', parts: [{ text: 'Hi' }] },
+        { role: 'model', parts: [{ text: 'Hello!' }] },
+        { role: 'user', parts: [{ text: 'Tell me about Facilities' }] } // orphaned by an earlier failure
+    ], 'How are you'),
+    [
+        { role: 'user', parts: [{ text: 'Hi' }] },
+        { role: 'model', parts: [{ text: 'Hello!' }] },
+        { role: 'user', parts: [{ text: 'Tell me about Facilities' }] }
+    ],
+    'full pipeline: drop leading non-user turn, merge the orphaned user turn instead of sending two user turns in a row'
+);
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
+console.log('Malformed or non-alternating history no longer crashes /api/chat.');

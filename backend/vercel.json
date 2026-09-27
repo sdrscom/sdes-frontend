@@ -5,7 +5,8 @@
       "src": "server.mjs",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": "knowledge/**"
+        "includeFiles": "knowledge/**",
+        "maxDuration": 30
       }
     }
   ],

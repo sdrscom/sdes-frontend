@@ -8,6 +8,8 @@ const getBackendUrl = () => {
         : 'https://sdes-backend.vercel.app';
 };
 
+const INITIAL_BOT_GREETING = 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?';
+
 const css = `
 :root {
         --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
@@ -85,7 +87,7 @@ const css = `
 
 export default function Chatbot() {
     const [messages, setMessages] = useState([
-        { role: 'bot', text: 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?', time: 'Just now' }
+        { role: 'bot', text: INITIAL_BOT_GREETING, time: 'Just now' }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -256,16 +258,14 @@ export default function Chatbot() {
     }
 
     const backendUrl = getBackendUrl();
-    const initialBotGreeting = 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?';
-
-    // Client-side placeholders shown when a request fails. These never came from
-    // Gemini, so they must not be replayed back into the model's history.
-    const clientErrorPlaceholders = new Set([
-        'Sorry, the assistant could not respond right now.',
-        'Sorry, I could not reach the assistant right now.',
-        'Sorry, I could not generate a reply right now.',
-        'Speech-to-text is not available in this browser.'
-    ]);
+    // History sent to Gemini must strictly alternate user/model turns. The visible
+    // `messages` list also holds UI-only entries (the greeting, the "thinking"
+    // placeholder, and error placeholders shown after a failed request) and, after
+    // any failed turn, a user message with no matching reply. Deriving the API
+    // history from that display list can produce two user turns in a row, which
+    // Gemini rejects outright. To avoid that, keep a separate ref that only grows
+    // once a turn actually succeeds, so it always alternates cleanly.
+    const conversationHistoryRef = useRef([]);
 
     async function sendAudioToGemini(base64Audio) {
         if (!isVoiceActive) return;
@@ -414,13 +414,9 @@ export default function Chatbot() {
         setSelectedAttachment(null);
         setIsThinking(true);
 
-        const history = messages
-            .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
-            .filter((msg) => !(msg.role === 'bot' && clientErrorPlaceholders.has(msg.text)))
-            .map(({ role, text }) => ({
-                role: role === 'bot' ? 'model' : 'user',
-                parts: [{ text }]
-            }));
+        // Snapshot before this turn. Only committed to conversationHistoryRef once
+        // we know the exchange actually succeeded.
+        const history = conversationHistoryRef.current;
 
         try {
             const response = await fetch(`${backendUrl}/api/chat`, {
@@ -439,7 +435,16 @@ export default function Chatbot() {
                 return;
             }
 
-            appendMessage(botReply || 'Sorry, I could not generate a reply right now.', 'bot');
+            if (botReply) {
+                appendMessage(botReply, 'bot');
+                conversationHistoryRef.current = [
+                    ...history,
+                    { role: 'user', parts: [{ text: finalMessage }] },
+                    { role: 'model', parts: [{ text: botReply }] }
+                ];
+            } else {
+                appendMessage('Sorry, I could not generate a reply right now.', 'bot');
+            }
         } catch (error) {
             console.error('Chat request failed', error);
             appendMessage('Sorry, I could not reach the assistant right now.', 'bot');

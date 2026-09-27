@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
-import { readFunctionCalls } from './readFunctionCalls.js';
+import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 
 dotenv.config();
 
@@ -74,23 +74,31 @@ app.post('/api/chat', async (req, res) => {
 
         let result = await chat.sendMessage(message);
         const callList = readFunctionCalls(result?.response);
+        let finalMessage = readReplyText(result?.response);
 
         if (callList.length > 0) {
             const toolCall = callList[0];
             const toolResult = await executeTool(toolCall.name, toolCall.args);
 
-            result = await chat.sendMessage([{
-                functionResponse: {
-                    name: toolCall.name,
-                    response: toolResult
-                }
-            }]);
+            try {
+                result = await chat.sendMessage([{
+                    functionResponse: {
+                        name: toolCall.name,
+                        response: toolResult
+                    }
+                }]);
+                finalMessage = readReplyText(result?.response) || finalMessage;
+            } catch (toolError) {
+                console.error('Tool follow-up failed:', toolError);
+            }
+        }
+
+        if (!finalMessage) {
+            finalMessage = 'I could not complete that answer. Please ask again, or contact the SDRS commercial team at info@sdrs.com.sa.';
         }
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Transfer-Encoding', 'chunked');
-
-        const finalMessage = result.response.text();
         const chunkSize = 20;
         for (let i = 0; i < finalMessage.length; i += chunkSize) {
             res.write(finalMessage.slice(i, i + chunkSize));

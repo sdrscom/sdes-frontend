@@ -5,7 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
-import { sanitizeHistoryForGemini } from './chatHistory.js';
+import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 
 dotenv.config();
 
@@ -32,11 +32,17 @@ let systemInstruction = loadKnowledgeBase();
 
 app.post('/api/chat', async (req, res) => {
     try {
-        const { message, history } = req.body;
+        const { message, history, attachmentBase64, attachmentMimeType } = req.body;
 
         // Normalize and sanitize incoming history so Gemini always receives a valid,
         // strictly-alternating chat transcript, no matter what the client sent.
         const sanitizedHistory = sanitizeHistoryForGemini(history, message);
+
+        // Build the message as multiple parts so an attachment's actual bytes reach
+        // Gemini instead of just its filename. Previously the widget only sent a text
+        // placeholder like "[Attachment: invoice.pdf (245 KB)]" — Gemini never saw the
+        // file itself, so it could not answer any question about its contents.
+        const messageParts = buildMessageParts(message, attachmentBase64, attachmentMimeType);
 
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
@@ -50,7 +56,7 @@ app.post('/api/chat', async (req, res) => {
 
         const chat = model.startChat({ history: sanitizedHistory });
 
-        let result = await chat.sendMessage(message);
+        let result = await chat.sendMessage(messageParts);
         const callList = readFunctionCalls(result?.response);
         let finalMessage = readReplyText(result?.response);
 
@@ -95,7 +101,7 @@ app.post('/api/chat', async (req, res) => {
 
 app.post('/api/voice-chat', async (req, res) => {
     try {
-        const { audioBase64 } = req.body;
+        const { audioBase64, history } = req.body;
 
         if (!audioBase64) {
             throw new Error('No audio data received from frontend.');
@@ -122,10 +128,25 @@ app.post('/api/voice-chat', async (req, res) => {
             }
         };
 
-        const result = await voiceModel.generateContent([prompt, audioPart]);
-        const responseText = result.response.text();
+        // Each voice turn previously called generateContent() in isolation, with no
+        // memory of earlier turns in the same voice session — a follow-up question
+        // like "what about pricing" had no idea what it was following up on. Route
+        // it through a chat session with sanitized history instead, same as text chat.
+        const sanitizedHistory = sanitizeHistoryForGemini(history, undefined);
+        const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
 
-        res.json(JSON.parse(responseText));
+        const result = await voiceChat.sendMessage([prompt, audioPart]);
+        const responseText = readReplyText(result?.response);
+
+        if (!responseText) {
+            throw new Error('Gemini returned no usable text for the audio turn.');
+        }
+
+        // Gemini can occasionally wrap JSON in a ```json fence even with
+        // responseMimeType set, especially for longer replies. Strip that before parsing
+        // instead of letting a strict JSON.parse throw on an otherwise-valid response.
+        const cleaned = responseText.trim().replace(/^```json\s*|```$/g, '').trim();
+        res.json(JSON.parse(cleaned));
     } catch (error) {
         console.error('\n❌ Voice Processing Error:', error);
         res.status(500).json({

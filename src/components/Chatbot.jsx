@@ -183,6 +183,12 @@ export default function Chatbot() {
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isVoiceActive, setIsVoiceActive] = useState(false);
+    // Mirrors isVoiceActive for async callbacks (MediaRecorder.onstop, fetch
+    // continuations) that were created from an earlier render. Reading the state
+    // variable directly in those closures can see a stale "still active" value
+    // even after closeVoice() has already turned voice mode off, letting a
+    // recording made just before closing still get sent and spoken aloud.
+    const isVoiceActiveRef = useRef(false);
     const [voiceState, setVoiceState] = useState('connecting');
     const [isThinking, setIsThinking] = useState(false);
     const [selectedAttachment, setSelectedAttachment] = useState(null);
@@ -212,7 +218,7 @@ export default function Chatbot() {
             recog.interimResults = false;
             recog.onend = () => {
                 const mr = mediaRecorderRef.current;
-                if (isVoiceActive && mr && mr.state === 'recording') mr.stop();
+                if (isVoiceActiveRef.current && mr && mr.state === 'recording') mr.stop();
             };
             silenceDetectorRef.current = recog;
         }
@@ -249,12 +255,31 @@ export default function Chatbot() {
         fileInputRef.current?.click();
     }
 
+    // Vercel serverless functions cap the request body around 4.5MB, and base64
+    // inflates a file's size by roughly a third. Reject oversized files up front
+    // with an honest message instead of letting the upload silently fail later.
+    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+
     async function handleAttachmentSelect(event) {
         const file = event.target.files?.[0];
+        event.target.value = '';
         if (!file) return;
 
-        event.target.value = '';
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+            appendMessage(`That file is too large (${Math.round(file.size / 1024)} KB). Please attach something under ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB.`, 'bot');
+            return;
+        }
+
         setSelectedAttachment(file);
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
     }
 
     async function initHardware() {
@@ -275,7 +300,7 @@ export default function Chatbot() {
         setVisualizerState('speaking');
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {
-            if (!isVoiceActive || voiceState !== 'speaking') break;
+            if (!isVoiceActiveRef.current || voiceState !== 'speaking') break;
             const sentence = audioQueueRef.current[i].trim();
             if (!sentence) continue;
 
@@ -289,7 +314,7 @@ export default function Chatbot() {
             });
         }
 
-        if (isVoiceActive && voiceState === 'speaking') {
+        if (isVoiceActiveRef.current && voiceState === 'speaking') {
             startListeningLoop();
         }
     }
@@ -325,7 +350,7 @@ export default function Chatbot() {
             mediaRecorderRef.current = mr;
             mr.ondataavailable = e => audioChunksRef.current.push(e.data);
             mr.onstop = async () => {
-                if (!isVoiceActive) return;
+                if (!isVoiceActiveRef.current) return;
                 setVisualizerState('processing');
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 // allow smaller blobs to be processed to avoid endless listening loops
@@ -368,14 +393,18 @@ export default function Chatbot() {
     // Gemini rejects outright. To avoid that, keep a separate ref that only grows
     // once a turn actually succeeds, so it always alternates cleanly.
     const conversationHistoryRef = useRef([]);
+    // Voice mode previously called the model fresh on every turn with no memory of
+    // earlier exchanges in the same voice session, so a follow-up like "what about
+    // pricing" had nothing to follow up on. Track it the same way text chat does.
+    const voiceHistoryRef = useRef([]);
 
     async function sendAudioToGemini(base64Audio) {
-        if (!isVoiceActive) return;
+        if (!isVoiceActiveRef.current) return;
         try {
             const response = await fetch(`${backendUrl}/api/voice-chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audioBase64: base64Audio })
+                body: JSON.stringify({ audioBase64: base64Audio, history: voiceHistoryRef.current })
             });
             const data = await response.json();
 
@@ -383,6 +412,13 @@ export default function Chatbot() {
 
             if (data.reply) {
                 appendMessage(data.reply, 'bot');
+                if (data.transcript && data.transcript !== '...') {
+                    voiceHistoryRef.current = [
+                        ...voiceHistoryRef.current,
+                        { role: 'user', parts: [{ text: data.transcript }] },
+                        { role: 'model', parts: [{ text: data.reply }] }
+                    ];
+                }
                 playHumanVoice(data.reply);
             } else {
                 startListeningLoop();
@@ -411,7 +447,10 @@ export default function Chatbot() {
         closeVoice();
 
         const recog = new SpeechRecognition();
-        recog.lang = 'en-US';
+        // Match the site's current language instead of forcing English, so
+        // Arabic-speaking visitors get accurate dictation instead of the browser
+        // trying (and failing) to transcribe Arabic speech as English.
+        recog.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
         recog.continuous = false;
         recog.interimResults = true;
         recog.onstart = () => {
@@ -468,22 +507,34 @@ export default function Chatbot() {
         try {
             stopDictation();
             setVisualizerState('connecting');
+            isVoiceActiveRef.current = true;
             setIsVoiceActive(true);
             await initHardware();
             setTimeout(() => startListeningLoop(), 300);
         } catch (e) {
             console.error('Hardware access denied.', e);
+            isVoiceActiveRef.current = false;
             setIsVoiceActive(false);
             try { if (silenceDetectorRef.current) silenceDetectorRef.current.stop(); } catch (err) {}
         }
     }
 
     function closeVoice() {
+        isVoiceActiveRef.current = false;
         setIsVoiceActive(false);
         stopAudioEngine();
         try { if (silenceDetectorRef.current) silenceDetectorRef.current.stop(); } catch (e) {}
         const mr = mediaRecorderRef.current;
         if (mr && mr.state === 'recording') mr.stop();
+
+        // Closing voice mode previously left the microphone stream open, so the
+        // browser's "mic in use" indicator stayed on even though the overlay was
+        // closed. Release the actual hardware access; openVoice() re-requests it
+        // fresh next time.
+        if (micStreamRef.current) {
+            try { micStreamRef.current.getTracks().forEach(track => track.stop()); } catch (e) {}
+            micStreamRef.current = null;
+        }
     }
 
     function openChat() {
@@ -499,14 +550,27 @@ export default function Chatbot() {
 
     async function handleSendMessage(messageOverride = null) {
         const typedMessage = (messageOverride ?? input).trim();
+        const attachment = selectedAttachment;
         let finalMessage = typedMessage;
+        let attachmentBase64 = null;
 
-        if (selectedAttachment) {
-            const attachmentLabel = selectedAttachment.name;
-            const attachmentSize = Math.round(selectedAttachment.size / 1024);
+        if (attachment) {
+            const attachmentLabel = attachment.name;
+            const attachmentSize = Math.round(attachment.size / 1024);
+            // Keep a readable label in the visible transcript, but this is display-only
+            // now — the actual file bytes are sent separately below so Gemini can read
+            // the real contents, not just the filename.
             finalMessage = typedMessage
                 ? `${typedMessage}\n\n[Attachment: ${attachmentLabel} (${attachmentSize} KB)]`
                 : `Please review this attachment: ${attachmentLabel} (${attachmentSize} KB)`;
+
+            try {
+                attachmentBase64 = await readFileAsDataUrl(attachment);
+            } catch (e) {
+                console.error('Failed to read attachment', e);
+                appendMessage('Sorry, I could not read that attachment. Please try again.', 'bot');
+                return;
+            }
         }
 
         if (!finalMessage) return;
@@ -525,8 +589,9 @@ export default function Chatbot() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: finalMessage,
-                    history
+                    message: typedMessage || (attachment ? `Please review this attachment: ${attachment.name}` : ''),
+                    history,
+                    ...(attachmentBase64 ? { attachmentBase64, attachmentMimeType: attachment.type || 'application/octet-stream' } : {})
                 })
             });
 

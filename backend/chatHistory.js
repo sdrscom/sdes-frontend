@@ -70,3 +70,33 @@ export function sanitizeHistoryForGemini(rawHistory, incomingMessage) {
 
     return history;
 }
+
+/**
+ * Builds the Part array sent for a single /api/chat turn. An attachment's actual
+ * bytes are included as an inlineData part so Gemini can read the file itself,
+ * instead of only receiving a text description like "[Attachment: invoice.pdf]"
+ * with no way to see what is actually in it.
+ */
+export function buildMessageParts(message, attachmentBase64, attachmentMimeType) {
+    const parts = [];
+
+    if (typeof message === 'string' && message) {
+        parts.push({ text: message });
+    }
+
+    if (attachmentBase64) {
+        const rawBase64 = attachmentBase64.includes(',') ? attachmentBase64.split(',')[1] : attachmentBase64;
+        parts.push({
+            inlineData: {
+                data: rawBase64,
+                mimeType: attachmentMimeType || 'application/octet-stream'
+            }
+        });
+    }
+
+    if (parts.length === 0) {
+        parts.push({ text: '' });
+    }
+
+    return parts;
+}

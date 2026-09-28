@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from '../knowledgeBase.js';
 import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
-import { sanitizeHistoryForGemini, enforceAlternatingRoles } from '../chatHistory.js';
+import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts } from '../chatHistory.js';
 
 const calls = [];
 
@@ -154,6 +154,37 @@ assert.deepEqual(
     'full pipeline: drop leading non-user turn, merge the orphaned user turn instead of sending two user turns in a row'
 );
 
+// Regression: an attachment previously never reached Gemini at all — the widget
+// only sent a text label like "[Attachment: invoice.pdf (245 KB)]" and discarded
+// the actual file. buildMessageParts must include the real bytes as inlineData.
+assert.deepEqual(
+    buildMessageParts('What does this say?', 'data:image/png;base64,QUJD', 'image/png'),
+    [
+        { text: 'What does this say?' },
+        { inlineData: { data: 'QUJD', mimeType: 'image/png' } }
+    ],
+    'attachment bytes must be sent to Gemini as inlineData, not just described in text'
+);
+
+assert.deepEqual(
+    buildMessageParts('', 'QUJD', 'application/pdf'),
+    [{ inlineData: { data: 'QUJD', mimeType: 'application/pdf' } }],
+    'an attachment with no typed text should still be sent'
+);
+
+assert.deepEqual(
+    buildMessageParts('Hello', null, null),
+    [{ text: 'Hello' }],
+    'plain text messages are unaffected'
+);
+
+assert.deepEqual(
+    buildMessageParts('', null, null),
+    [{ text: '' }],
+    'never send zero parts, even for an empty message'
+);
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
 console.log('Malformed or non-alternating history no longer crashes /api/chat.');
+console.log('Attachments are sent to Gemini as real file data, not just a filename.');

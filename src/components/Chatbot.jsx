@@ -608,13 +608,15 @@ export default function Chatbot() {
                         <div ref={endRef} />
                     </div>
 
-                    <div className="quick-pills" aria-hidden={isDictating}>
-                        {['About SDRS', 'Services', 'Investment', 'Contact Us'].map((s, i) => (
-                            <button key={i} type="button" className="pill" onClick={() => { setInput(s); try { messageInputRef.current?.focus(); } catch (e) {} }}>
-                                {s}
-                            </button>
-                        ))}
-                    </div>
+                    {messages.length <= 1 && (
+                        <div className="quick-pills" aria-hidden={isDictating}>
+                            {['About SDRS', 'Services', 'Investment', 'Contact Us'].map((s, i) => (
+                                <button key={i} type="button" className="pill" onClick={() => handleSendMessage(s)} disabled={isThinking}>
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     <div id="input-area">
                         <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleAttachmentSelect} />

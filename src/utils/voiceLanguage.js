@@ -7,12 +7,13 @@ const URDU_ONLY_LETTERS = /[\u0679\u0688\u0691\u06BA\u06BE\u06D2\u06AF\u0686\u06
 const ARABIC_SCRIPT = /[\u0600-\u06FF]/;
 
 /**
- * Picks the Google Translate TTS language code for a piece of assistant text.
- * Returns 'ur' for Urdu script, 'ar' for Arabic script, otherwise 'en-US'.
+ * Picks a BCP-47 language tag for a piece of assistant text, for use with the
+ * browser's SpeechSynthesis API (or anything else that wants a locale tag).
+ * Returns 'ur-PK' for Urdu script, 'ar-SA' for Arabic script, otherwise 'en-US'.
  */
 export function detectVoiceLanguage(text) {
     const value = String(text ?? '');
-    if (URDU_ONLY_LETTERS.test(value)) return 'ur';
-    if (ARABIC_SCRIPT.test(value)) return 'ar';
+    if (URDU_ONLY_LETTERS.test(value)) return 'ur-PK';
+    if (ARABIC_SCRIPT.test(value)) return 'ar-SA';
     return 'en-US';
 }

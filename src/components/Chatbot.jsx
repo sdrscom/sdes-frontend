@@ -204,7 +204,7 @@ export default function Chatbot() {
     const micStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
-    const currentAudioRef = useRef(null);
+    const currentUtteranceRef = useRef(null);
     const audioQueueRef = useRef([]);
     const silenceDetectorRef = useRef(null);
     const speechRecognitionRef = useRef(null);
@@ -292,10 +292,31 @@ export default function Chatbot() {
         setVoiceState(state);
     }
 
+    // Picks a loaded voice matching the target language, if the browser has one.
+    // getVoices() can return [] before the async 'voiceschanged' event fires in some
+    // browsers, so this is best-effort — omitting a voice still works fine, the
+    // browser just falls back to its own default for the utterance's lang.
+    function pickVoice(lang) {
+        try {
+            const voices = window.speechSynthesis.getVoices();
+            const short = lang.split('-')[0];
+            return voices.find(v => v.lang === lang) || voices.find(v => v.lang?.startsWith(short)) || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
     async function playHumanVoice(text) {
         stopAudioEngine();
-        const lang = detectVoiceLanguage(text);
 
+        if (!window.speechSynthesis) {
+            // No TTS engine available in this browser — skip straight back to
+            // listening instead of leaving the overlay silently stuck.
+            if (isVoiceActiveRef.current) startListeningLoop();
+            return;
+        }
+
+        const lang = detectVoiceLanguage(text);
         audioQueueRef.current = text.match(/[^.!?،۔]+[.!?،۔]+/g) || [text];
         setVisualizerState('speaking');
 
@@ -304,13 +325,20 @@ export default function Chatbot() {
             const sentence = audioQueueRef.current[i].trim();
             if (!sentence) continue;
 
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(sentence)}`;
-            currentAudioRef.current = new Audio(url);
+            const utterance = new SpeechSynthesisUtterance(sentence);
+            utterance.lang = lang;
+            const voice = pickVoice(lang);
+            if (voice) utterance.voice = voice;
+            currentUtteranceRef.current = utterance;
 
             await new Promise(resolve => {
-                currentAudioRef.current.onended = resolve;
-                currentAudioRef.current.onerror = resolve;
-                currentAudioRef.current.play().catch(resolve);
+                utterance.onend = resolve;
+                utterance.onerror = resolve;
+                try {
+                    window.speechSynthesis.speak(utterance);
+                } catch (e) {
+                    resolve();
+                }
             });
         }
 
@@ -320,7 +348,10 @@ export default function Chatbot() {
     }
 
     function stopAudioEngine() {
-        if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+        if (window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+        }
+        currentUtteranceRef.current = null;
         audioQueueRef.current = [];
     }
 

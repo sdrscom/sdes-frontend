@@ -5,6 +5,7 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, MAX_MESSAGE_LENGTH } from '../validation.js';
+import { TimeoutError, withTimeout, isRetryableError, withSingleRetry } from '../reliability.js';
 
 const calls = [];
 
@@ -214,9 +215,58 @@ assert.equal(
     'capping must keep the most recent turns, not the oldest'
 );
 
+// Regression: a stuck Gemini call previously had no bound of its own and would
+// run until Vercel's platform-level maxDuration killed the whole function with a
+// generic error. withTimeout must reject with a clean, recognizable TimeoutError
+// well before that, so the route's catch block can respond gracefully instead.
+await assert.rejects(
+    () => withTimeout(() => new Promise(() => {}), 20, 'test call'),
+    TimeoutError,
+    'a call that never resolves must be rejected by the timeout, not hang forever'
+);
+const fastValue = await withTimeout(() => Promise.resolve('ok'), 1000, 'test call');
+assert.equal(fastValue, 'ok', 'a call that finishes well within the timeout must resolve normally');
+
+// Regression: retrying a 429 (quota) or a timeout cannot possibly succeed and
+// only wastes another quota-counted call or doubles the user's wait. Only a
+// genuinely transient failure (5xx, or no status at all) should be retried.
+assert.equal(isRetryableError(new TimeoutError('slow')), false, 'a timeout must never be retried');
+assert.equal(isRetryableError({ status: 429 }), false, 'a 429 (quota) must never be retried');
+assert.equal(isRetryableError({ status: 400 }), false, 'a 400 (bad request) must never be retried');
+assert.equal(isRetryableError({ status: 500 }), true, 'a 5xx from Gemini is worth one retry');
+assert.equal(isRetryableError({}), true, 'a plain network failure with no status is worth one retry');
+
+let attempts = 0;
+const recovered = await withSingleRetry(() => {
+    attempts++;
+    if (attempts === 1) {
+        const e = new Error('temporary blip');
+        e.status = 503;
+        throw e;
+    }
+    return Promise.resolve('recovered');
+});
+assert.equal(recovered, 'recovered', 'withSingleRetry must succeed on the second attempt after a transient failure');
+assert.equal(attempts, 2, 'withSingleRetry must call the function exactly twice for a retryable failure');
+
+let quotaAttempts = 0;
+await assert.rejects(
+    () => withSingleRetry(() => {
+        quotaAttempts++;
+        const e = new Error('quota exceeded');
+        e.status = 429;
+        throw e;
+    }),
+    /quota exceeded/,
+    'withSingleRetry must not swallow a non-retryable error'
+);
+assert.equal(quotaAttempts, 1, 'withSingleRetry must not retry a 429, only call the function once');
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
 console.log('Malformed or non-alternating history no longer crashes /api/chat.');
 console.log('Attachments are sent to Gemini as real file data, not just a filename.');
 console.log('Empty, oversized, and malformed /api/chat requests are rejected before calling Gemini.');
 console.log('Conversation history is capped instead of growing forever.');
+console.log('Stuck Gemini calls time out cleanly instead of hanging until the platform kills the function.');
+console.log('Only genuinely transient errors are retried; quota, bad-request, and timeout errors are not.');

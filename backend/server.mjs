@@ -8,6 +8,7 @@ import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest } from './validation.js';
+import { withTimeout, withSingleRetry } from './reliability.js';
 
 dotenv.config();
 
@@ -63,32 +64,17 @@ let systemInstruction = loadKnowledgeBase();
 // response, but the code previously discarded that. Logging it gives at least a
 // basic signal in Vercel's function logs for spotting unusually expensive turns,
 // without standing up a full analytics/observability service.
-function logTokenUsage(kind, response) {
+function logTokenUsage(kind, response, startedAt) {
     const usage = response?.usageMetadata;
-    if (!usage) return;
-    console.log(`[token usage:${kind}] prompt=${usage.promptTokenCount ?? '?'} candidates=${usage.candidatesTokenCount ?? '?'} total=${usage.totalTokenCount ?? '?'}`);
+    const elapsedMs = startedAt ? Date.now() - startedAt : undefined;
+    if (!usage && elapsedMs === undefined) return;
+    console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
 }
 
-// Retrying a 429 (quota exhausted) or a 4xx (bad request) immediately cannot
-// succeed and only burns another call against the same limited quota. Only retry
-// once, only for errors that plausibly are transient (a dropped connection or a
-// 5xx from Google's side), with a short backoff.
-function isRetryableError(error) {
-    const status = error?.status || error?.response?.status;
-    if (status === undefined) return true; // network-level failure, no HTTP status at all
-    return status >= 500;
-}
-
-async function withSingleRetry(fn) {
-    try {
-        return await fn();
-    } catch (error) {
-        if (!isRetryableError(error)) throw error;
-        console.warn('Transient Gemini error, retrying once:', error?.message);
-        await new Promise(r => setTimeout(r, 400));
-        return fn();
-    }
-}
+// vercel.json sets maxDuration to 30s; keep our own timeout comfortably below
+// that so our catch block gets to respond with a friendly message before the
+// platform kills the function outright with a generic error.
+const GEMINI_TIMEOUT_MS = 25000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
@@ -121,8 +107,9 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
 
         const chat = model.startChat({ history: sanitizedHistory });
 
-        let result = await withSingleRetry(() => chat.sendMessage(messageParts));
-        logTokenUsage('chat', result?.response);
+        const startedAt = Date.now();
+        let result = await withSingleRetry(() => withTimeout(() => chat.sendMessage(messageParts), GEMINI_TIMEOUT_MS, 'Gemini chat request'));
+        logTokenUsage('chat', result?.response, startedAt);
         const callList = readFunctionCalls(result?.response);
         let finalMessage = readReplyText(result?.response);
 
@@ -167,7 +154,9 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         const status = (upstreamStatus >= 400 && upstreamStatus < 600) ? upstreamStatus : 500;
         const message = status === 429
             ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
-            : `Connection error with AI server. ${error?.message || ''}`.trim();
+            : status === 504
+                ? 'That took longer than expected to answer. Please try asking again, perhaps with a shorter question.'
+                : `Connection error with AI server. ${error?.message || ''}`.trim();
         res.status(status).send(message);
     }
 });
@@ -215,8 +204,9 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const sanitizedHistory = sanitizeHistoryForGemini(history, undefined);
         const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
 
-        const result = await voiceChat.sendMessage([prompt, audioPart]);
-        logTokenUsage('voice-chat', result?.response);
+        const voiceStartedAt = Date.now();
+        const result = await withTimeout(() => voiceChat.sendMessage([prompt, audioPart]), GEMINI_TIMEOUT_MS, 'Gemini voice-chat request');
+        logTokenUsage('voice-chat', result?.response, voiceStartedAt);
         const responseText = readReplyText(result?.response);
 
         if (!responseText) {

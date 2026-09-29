@@ -284,6 +284,11 @@ export default function Chatbot() {
     // friendly client-side check — the backend enforces the real limit
     // regardless, since a direct API call could always skip this file entirely.
     const MAX_MESSAGE_LENGTH = 6000;
+    // Gemini's inlineData understands images, PDFs, and plain text well; other
+    // binary types (zip, exe, docx, etc.) either fail silently or waste a call
+    // producing a confused reply. Reject them up front with an honest message
+    // instead of sending bytes Gemini can't actually use.
+    const ACCEPTED_ATTACHMENT_TYPES = ['image/', 'application/pdf', 'text/plain'];
 
     async function handleAttachmentSelect(event) {
         const file = event.target.files?.[0];
@@ -292,6 +297,12 @@ export default function Chatbot() {
 
         if (file.size > MAX_ATTACHMENT_BYTES) {
             appendMessage(`That file is too large (${Math.round(file.size / 1024)} KB). Please attach something under ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB.`, 'bot');
+            return;
+        }
+
+        const isAccepted = ACCEPTED_ATTACHMENT_TYPES.some(prefix => file.type?.startsWith(prefix));
+        if (!isAccepted) {
+            appendMessage(`That file type (${file.type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`, 'bot');
             return;
         }
 
@@ -761,11 +772,12 @@ export default function Chatbot() {
             const botReply = await response.text();
             if (!response.ok) {
                 console.error('Chat API error', response.status, botReply);
-                // 400/413/429 responses now carry a specific, already user-friendly
-                // reason (bad input, rate-limited, or Gemini's own quota exhausted) —
-                // show that directly instead of a generic message. Only a genuine
-                // server error (5xx) falls back to the generic apology.
-                const message = response.status < 500 && botReply
+                // 400/413/429/504 responses now carry a specific, already
+                // user-friendly reason (bad input, rate-limited, Gemini's own quota
+                // exhausted, or a request that timed out) — show that directly
+                // instead of a generic message. Only a genuine, unexplained server
+                // error (500) falls back to the generic apology.
+                const message = response.status !== 500 && botReply
                     ? botReply
                     : 'Sorry, the assistant could not respond right now.';
                 appendMessage(message, 'bot');
@@ -853,7 +865,7 @@ export default function Chatbot() {
                     )}
 
                     <div id="input-area">
-                        <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleAttachmentSelect} />
+                        <input type="file" ref={fileInputRef} accept="image/*,application/pdf,text/plain" style={{ display: 'none' }} onChange={handleAttachmentSelect} />
                         <button className="icon-btn" title="Attach File" onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </button>

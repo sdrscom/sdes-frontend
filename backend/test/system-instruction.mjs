@@ -3,7 +3,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from '../knowledgeBase.js';
 import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
-import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts } from '../chatHistory.js';
+import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
+import { validateChatRequest, MAX_MESSAGE_LENGTH } from '../validation.js';
 
 const calls = [];
 
@@ -184,7 +185,38 @@ assert.deepEqual(
     'never send zero parts, even for an empty message'
 );
 
+// Regression: /api/chat previously accepted anything, including an empty
+// message with no attachment (wasting a Gemini call for nothing) and messages of
+// unbounded length. validateChatRequest is the pure logic behind that guard.
+assert.equal(validateChatRequest({ message: 'Hello' }).valid, true);
+assert.equal(validateChatRequest({ message: '', attachmentBase64: 'QUJD' }).valid, true, 'an attachment alone, with no typed text, is a valid request');
+assert.equal(validateChatRequest({ message: '' }).valid, false, 'empty message with no attachment must be rejected');
+assert.equal(validateChatRequest({ message: '   ' }).valid, false, 'whitespace-only message must be rejected');
+assert.equal(validateChatRequest({}).valid, false, 'missing message entirely must be rejected');
+assert.equal(validateChatRequest({ message: 'x'.repeat(MAX_MESSAGE_LENGTH + 1) }).valid, false, 'over-length messages must be rejected');
+assert.equal(validateChatRequest({ message: 'x'.repeat(MAX_MESSAGE_LENGTH) }).valid, true, 'exactly the limit is still allowed');
+assert.equal(validateChatRequest({ message: 123 }).valid, false, 'non-string message must be rejected, not crash on .trim()');
+assert.equal(validateChatRequest({ message: 'hi', attachmentBase64: 'x'.repeat(7 * 1024 * 1024) }).valid, false, 'oversized attachment payload must be rejected');
+
+// Regression: a very long-running conversation resent its entire history forever
+// with no bound. sanitizeHistoryForGemini must cap it and still start with 'user'.
+const longHistory = [];
+for (let i = 0; i < 40; i++) {
+    longHistory.push({ role: 'user', parts: [{ text: `question ${i}` }] });
+    longHistory.push({ role: 'model', parts: [{ text: `answer ${i}` }] });
+}
+const cappedHistory = sanitizeHistoryForGemini(longHistory, 'a new question');
+assert.ok(cappedHistory.length <= MAX_HISTORY_MESSAGES, 'history must be capped to a bounded number of turns');
+assert.equal(cappedHistory[0].role, 'user', 'capped history must still start with a user turn');
+assert.equal(
+    cappedHistory[cappedHistory.length - 1].parts[0].text,
+    'answer 39',
+    'capping must keep the most recent turns, not the oldest'
+);
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
 console.log('Malformed or non-alternating history no longer crashes /api/chat.');
 console.log('Attachments are sent to Gemini as real file data, not just a filename.');
+console.log('Empty, oversized, and malformed /api/chat requests are rejected before calling Gemini.');
+console.log('Conversation history is capped instead of growing forever.');

@@ -50,6 +50,12 @@ export function enforceAlternatingRoles(history) {
  * only sends prior turns, but this stays defensive in case a caller includes
  * the current turn inside history too).
  */
+// A very long-running conversation would otherwise resend its entire history on
+// every turn, forever — growing latency and cost with no bound and risking the
+// model's context window eventually. Keep the most recent turns only; older
+// context matters far less than what the user just asked.
+export const MAX_HISTORY_MESSAGES = 24;
+
 export function sanitizeHistoryForGemini(rawHistory, incomingMessage) {
     let history = normalizeHistory(rawHistory);
 
@@ -65,6 +71,15 @@ export function sanitizeHistoryForGemini(rawHistory, incomingMessage) {
         const lastText = (last.parts || []).map(part => part?.text || '').join('').trim();
         if (last.role === 'user' && lastText === incoming) {
             history.pop();
+        }
+    }
+
+    if (history.length > MAX_HISTORY_MESSAGES) {
+        history = history.slice(history.length - MAX_HISTORY_MESSAGES);
+        // Trimming from the front can leave a leading 'model' turn; Gemini requires
+        // the transcript to start with 'user', so re-apply that rule once more.
+        while (history.length > 0 && history[0].role !== 'user') {
+            history.shift();
         }
     }
 

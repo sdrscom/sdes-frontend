@@ -50,12 +50,13 @@ const css = `
 .header-title { font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0.01em; }
 .header-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.78); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18); }
-.chat-close-btn {
+.chat-close-btn, .chat-clear-btn {
     background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: white;
     cursor: pointer; width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease;
 }
-.chat-close-btn:hover { background: rgba(255,255,255,0.2); }
+.chat-close-btn:hover, .chat-clear-btn:hover { background: rgba(255,255,255,0.2); }
+.header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .chat-toggle-button {
     position: fixed; bottom: 24px; right: 24px; width: 60px; height: 60px; border-radius: 50%;
     background: #2d3b76; color: #fff; border: 3px solid #fff;
@@ -259,6 +260,10 @@ export default function Chatbot() {
     // inflates a file's size by roughly a third. Reject oversized files up front
     // with an honest message instead of letting the upload silently fail later.
     const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+    // Mirrors backend/validation.js's MAX_MESSAGE_LENGTH. This is just a fast,
+    // friendly client-side check — the backend enforces the real limit
+    // regardless, since a direct API call could always skip this file entirely.
+    const MAX_MESSAGE_LENGTH = 6000;
 
     async function handleAttachmentSelect(event) {
         const file = event.target.files?.[0];
@@ -626,6 +631,17 @@ export default function Chatbot() {
         }
     }
 
+    function clearConversation() {
+        if (isVoiceActive) {
+            closeVoice();
+        }
+        setMessages([{ role: 'bot', text: INITIAL_BOT_GREETING, time: 'Just now' }]);
+        conversationHistoryRef.current = [];
+        voiceHistoryRef.current = [];
+        setSelectedAttachment(null);
+        setInput('');
+    }
+
     async function handleSendMessage(messageOverride = null) {
         const typedMessage = (messageOverride ?? input).trim();
         const attachment = selectedAttachment;
@@ -653,6 +669,11 @@ export default function Chatbot() {
 
         if (!finalMessage) return;
 
+        if (typedMessage.length > MAX_MESSAGE_LENGTH) {
+            appendMessage(`That message is too long (${typedMessage.length} characters). Please keep it under ${MAX_MESSAGE_LENGTH} characters.`, 'bot');
+            return;
+        }
+
         appendMessage(finalMessage, 'user');
         setInput('');
         setSelectedAttachment(null);
@@ -676,11 +697,12 @@ export default function Chatbot() {
             const botReply = await response.text();
             if (!response.ok) {
                 console.error('Chat API error', response.status, botReply);
-                // A 429 here means the AI provider's request quota is exhausted, not a
-                // bug in this widget — retrying immediately will not help. Say so
-                // honestly instead of implying something is broken.
-                const message = response.status === 429
-                    ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
+                // 400/413/429 responses now carry a specific, already user-friendly
+                // reason (bad input, rate-limited, or Gemini's own quota exhausted) —
+                // show that directly instead of a generic message. Only a genuine
+                // server error (5xx) falls back to the generic apology.
+                const message = response.status < 500 && botReply
+                    ? botReply
                     : 'Sorry, the assistant could not respond right now.';
                 appendMessage(message, 'bot');
                 return;
@@ -724,9 +746,14 @@ export default function Chatbot() {
                                 <div className="header-status"><span className="status-dot" /> Trade support</div>
                             </div>
                         </div>
-                        <button className="chat-close-btn" onClick={hideChat} title="Close chat">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
+                        <div className="header-actions">
+                            <button className="chat-clear-btn" onClick={clearConversation} title="Clear conversation" disabled={isThinking}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                            </button>
+                            <button className="chat-close-btn" onClick={hideChat} title="Close chat">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <div id="messages" ref={messagesRef}>

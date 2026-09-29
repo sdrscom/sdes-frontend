@@ -1,16 +1,24 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
+import { validateChatRequest } from './validation.js';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// Vercel sits in front of this function as a reverse proxy, so Express needs to
+// trust its X-Forwarded-For header to see the real visitor IP. Without this,
+// express-rate-limit would either rate-limit everyone as one shared IP or refuse
+// to start under its own anti-misconfiguration check.
+app.set('trust proxy', 1);
 
 const allowedOrigins = ['https://www.sdrs.com.sa', 'https://sdrs.com.sa'];
 
@@ -24,15 +32,72 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// A malformed JSON body throws inside express.json() itself, before any route
+// handler runs. Without this, Express falls back to its default HTML error page
+// instead of a response consistent with the rest of this API.
+app.use((err, req, res, next) => {
+    if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+        return res.status(400).send('Invalid request body.');
+    }
+    next(err);
+});
+
+// Basic abuse/flood protection. Chat requests cost real money and count against a
+// shared, limited Gemini quota — one visitor (or bot) sending requests in a tight
+// loop can exhaust the day's budget for everyone else. This is intentionally
+// generous for genuine back-and-forth conversation.
+const chatRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests. Please wait a moment before sending another message.'
+});
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 let systemInstruction = loadKnowledgeBase();
 
-app.post('/api/chat', async (req, res) => {
+// Cheap, dependency-free cost visibility: Gemini reports token counts on every
+// response, but the code previously discarded that. Logging it gives at least a
+// basic signal in Vercel's function logs for spotting unusually expensive turns,
+// without standing up a full analytics/observability service.
+function logTokenUsage(kind, response) {
+    const usage = response?.usageMetadata;
+    if (!usage) return;
+    console.log(`[token usage:${kind}] prompt=${usage.promptTokenCount ?? '?'} candidates=${usage.candidatesTokenCount ?? '?'} total=${usage.totalTokenCount ?? '?'}`);
+}
+
+// Retrying a 429 (quota exhausted) or a 4xx (bad request) immediately cannot
+// succeed and only burns another call against the same limited quota. Only retry
+// once, only for errors that plausibly are transient (a dropped connection or a
+// 5xx from Google's side), with a short backoff.
+function isRetryableError(error) {
+    const status = error?.status || error?.response?.status;
+    if (status === undefined) return true; // network-level failure, no HTTP status at all
+    return status >= 500;
+}
+
+async function withSingleRetry(fn) {
+    try {
+        return await fn();
+    } catch (error) {
+        if (!isRetryableError(error)) throw error;
+        console.warn('Transient Gemini error, retrying once:', error?.message);
+        await new Promise(r => setTimeout(r, 400));
+        return fn();
+    }
+}
+
+app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
         const { message, history, attachmentBase64, attachmentMimeType } = req.body;
+
+        const validation = validateChatRequest(req.body);
+        if (!validation.valid) {
+            return res.status(validation.status).send(validation.error);
+        }
 
         // Normalize and sanitize incoming history so Gemini always receives a valid,
         // strictly-alternating chat transcript, no matter what the client sent.
@@ -56,7 +121,8 @@ app.post('/api/chat', async (req, res) => {
 
         const chat = model.startChat({ history: sanitizedHistory });
 
-        let result = await chat.sendMessage(messageParts);
+        let result = await withSingleRetry(() => chat.sendMessage(messageParts));
+        logTokenUsage('chat', result?.response);
         const callList = readFunctionCalls(result?.response);
         let finalMessage = readReplyText(result?.response);
 
@@ -90,21 +156,35 @@ app.post('/api/chat', async (req, res) => {
         res.end();
     } catch (error) {
         console.error('\n❌ Text Chat Error:', error);
-        // The widget always shows its own generic apology to the visitor regardless
-        // of this body, so it's safe to include a diagnostic reason here — it helps
-        // tell apart a Gemini quota/rate-limit error (429), a bad-request/config
-        // error (400), and a genuine network failure without exposing secrets.
-        const status = error?.status || error?.response?.status;
-        res.status(500).send(`Connection error with AI server.${status ? ` [status:${status}]` : ''} ${error?.message || ''}`.trim());
+        // Regression fix: this previously always sent HTTP 500, even for a Gemini
+        // 429 (quota exhausted) or 400 (bad request) — so the frontend's
+        // "usage limit reached" branch, which checked response.status === 429, could
+        // never actually trigger; users only ever saw the generic apology. Forward
+        // the real upstream status when it's a valid HTTP error code so the widget
+        // can tell these cases apart, and fall back to 500 only for genuine
+        // unknown/network failures.
+        const upstreamStatus = error?.status || error?.response?.status;
+        const status = (upstreamStatus >= 400 && upstreamStatus < 600) ? upstreamStatus : 500;
+        const message = status === 429
+            ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
+            : `Connection error with AI server. ${error?.message || ''}`.trim();
+        res.status(status).send(message);
     }
 });
 
-app.post('/api/voice-chat', async (req, res) => {
+app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
     try {
         const { audioBase64, history } = req.body;
 
         if (!audioBase64) {
             throw new Error('No audio data received from frontend.');
+        }
+
+        if (typeof audioBase64 !== 'string' || audioBase64.length > 10 * 1024 * 1024) {
+            return res.status(400).json({
+                reply: 'That recording is too large to process. Please try a shorter message.',
+                transcript: '(Audio rejected: too large)'
+            });
         }
 
         const base64Data = audioBase64.split(',')[1];
@@ -136,6 +216,7 @@ app.post('/api/voice-chat', async (req, res) => {
         const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
 
         const result = await voiceChat.sendMessage([prompt, audioPart]);
+        logTokenUsage('voice-chat', result?.response);
         const responseText = readReplyText(result?.response);
 
         if (!responseText) {
@@ -156,8 +237,18 @@ app.post('/api/voice-chat', async (req, res) => {
     }
 });
 
-// Reload knowledge base into memory without restarting the server.
+// Reload knowledge base into memory without restarting the server. This is an
+// operator/admin action, not something the public widget ever calls — it was
+// previously wide open, so anyone who found the URL could trigger it. Require a
+// shared secret; with none configured, deny by default rather than staying open.
 app.post('/api/reload-knowledge', (req, res) => {
+    const configuredSecret = process.env.RELOAD_SECRET;
+    const providedSecret = req.get('x-reload-secret');
+
+    if (!configuredSecret || providedSecret !== configuredSecret) {
+        return res.status(403).json({ success: false, error: 'Forbidden.' });
+    }
+
     try {
         systemInstruction = loadKnowledgeBase();
         res.json({ success: true, message: 'Knowledge base reloaded.' });

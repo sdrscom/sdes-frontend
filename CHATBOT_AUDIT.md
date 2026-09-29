@@ -52,7 +52,7 @@ Key files referenced below:
 | Function/tool calling for structured intents (tracking, lead capture) | ✅ | `chatbotTools` + `executeTool` wired into `/api/chat`. |
 | Quick-reply intents (common questions) | ✅ | Quick-pill buttons (About/Services/Investment/Contact) auto-send and hide after first message. |
 | Attachment understanding (images/PDFs the user shares) | ✅ *(fixed this session)* | Previously only a filename label was sent; now real bytes go to Gemini as `inlineData` via `buildMessageParts`. |
-| Voice input understanding | ✅ | Dictation (`webkitSpeechRecognition`) and live voice mode both send real audio/text. |
+| Voice input understanding | ✅ *(dictation cut-off bug fixed)* | Dictation (`webkitSpeechRecognition`) previously had `continuous = false`, so the browser ended the whole session after the first detected pause — the user had to keep re-clicking the mic after every few words. Fixed to `continuous = true`, plus an auto-restart-on-unexpected-end guard (`dictationActiveRef`/`dictationFatalErrorRef`) for browsers that still occasionally end a "continuous" session on their own. Live voice mode's separate speaking loop was fixed earlier (see Conversation Flow & UX). |
 
 ## 5. Conversation Flow & UX
 

@@ -212,6 +212,15 @@ export default function Chatbot() {
     const messageInputRef = useRef(null);
     const speechBufferRef = useRef('');
     const dictationBaseRef = useRef('');
+    // Tracks whether the user still wants dictation running. Needed because even
+    // with continuous=true, some browsers still end a recognition session on
+    // their own after a longer pause or a transient hiccup — onend uses this to
+    // decide whether to auto-resume instead of forcing the user to click the mic
+    // button again.
+    const dictationActiveRef = useRef(false);
+    // Set on a fatal error (mic permission denied, no microphone, etc.) so onend
+    // doesn't try to auto-restart a session that can never succeed.
+    const dictationFatalErrorRef = useRef(false);
 
     const micStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
@@ -525,6 +534,7 @@ export default function Chatbot() {
     }
 
     function stopDictation() {
+        dictationActiveRef.current = false;
         if (speechRecognitionRef.current) {
             try { speechRecognitionRef.current.stop(); } catch (e) {}
         }
@@ -546,8 +556,15 @@ export default function Chatbot() {
         // Arabic-speaking visitors get accurate dictation instead of the browser
         // trying (and failing) to transcribe Arabic speech as English.
         recog.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-        recog.continuous = false;
+        // Regression fix: this was `false`, so the browser ended the entire
+        // recognition session as soon as it detected a short pause between
+        // phrases — after writing "a few words" the user had to click the mic
+        // button again to keep dictating. `true` lets one session span multiple
+        // phrases/pauses.
+        recog.continuous = true;
         recog.interimResults = true;
+        dictationActiveRef.current = true;
+        dictationFatalErrorRef.current = false;
         recog.onstart = () => {
             setIsDictating(true);
             setVisualizerState('listening');
@@ -578,15 +595,49 @@ export default function Chatbot() {
                 }
             } catch (e) {}
         };
-        recog.onerror = () => {
-            setIsDictating(false);
-            setVisualizerState('connecting');
+        recog.onerror = (event) => {
+            // A brief 'no-speech' gap is normal and should not end dictation — only
+            // permission/hardware errors are truly fatal and should stop it for good.
+            const fatalErrors = ['not-allowed', 'audio-capture', 'service-not-allowed'];
+            if (fatalErrors.includes(event?.error)) {
+                dictationFatalErrorRef.current = true;
+                dictationActiveRef.current = false;
+                if (event.error === 'not-allowed') {
+                    appendMessage('Microphone access was blocked. Please allow microphone permission to use Voice to Text.', 'bot');
+                } else if (event.error === 'audio-capture') {
+                    appendMessage('No microphone was found. Please connect one to use Voice to Text.', 'bot');
+                }
+            }
+            // The browser fires onend right after onerror; let onend decide whether
+            // to resume or fully stop, based on the flags set above.
         };
         recog.onend = () => {
-            setIsDictating(false);
-            setVisualizerState('connecting');
-            // ensure input is focused after dictation ends
-            try { messageInputRef.current?.focus(); } catch (e) {}
+            // Guard against a superseded session: if the mic button was clicked
+            // again in the meantime, speechRecognitionRef.current now points at a
+            // newer recog instance, and this stale onend must not touch it.
+            const isCurrentSession = speechRecognitionRef.current === recog;
+            if (isCurrentSession && dictationActiveRef.current && !dictationFatalErrorRef.current) {
+                // A short delay avoids a Chrome race where calling start() again
+                // synchronously inside a recognizer's own onend can throw
+                // "recognition has already started".
+                setTimeout(() => {
+                    const stillCurrent = speechRecognitionRef.current === recog;
+                    if (!stillCurrent || !dictationActiveRef.current || dictationFatalErrorRef.current) return;
+                    try {
+                        recog.start();
+                    } catch (e) {
+                        setIsDictating(false);
+                        setVisualizerState('connecting');
+                    }
+                }, 150);
+                return;
+            }
+            if (isCurrentSession) {
+                setIsDictating(false);
+                setVisualizerState('connecting');
+                // ensure input is focused after dictation ends
+                try { messageInputRef.current?.focus(); } catch (e) {}
+            }
         };
 
         speechRecognitionRef.current = recog;
@@ -594,6 +645,7 @@ export default function Chatbot() {
             recog.start();
         } catch (e) {
             console.error('Speech recognition init error', e);
+            dictationActiveRef.current = false;
             setIsDictating(false);
         }
     }

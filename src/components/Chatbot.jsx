@@ -306,12 +306,48 @@ export default function Chatbot() {
         }
     }
 
+    // Chrome (and some other browsers) load TTS voices asynchronously and can
+    // report zero voices for a short window right after page load, or in rare
+    // cases forever if the OS has no TTS voices installed at all. Wait briefly for
+    // them rather than speaking into a voice list that isn't ready yet.
+    function waitForVoices(timeoutMs = 1000) {
+        return new Promise(resolve => {
+            const existing = window.speechSynthesis.getVoices();
+            if (existing.length > 0) return resolve(existing);
+
+            let done = false;
+            const finish = (voices) => {
+                if (done) return;
+                done = true;
+                window.speechSynthesis.onvoiceschanged = null;
+                resolve(voices);
+            };
+            window.speechSynthesis.onvoiceschanged = () => finish(window.speechSynthesis.getVoices());
+            setTimeout(() => finish(window.speechSynthesis.getVoices()), timeoutMs);
+        });
+    }
+
     async function playHumanVoice(text) {
         stopAudioEngine();
 
         if (!window.speechSynthesis) {
             // No TTS engine available in this browser — skip straight back to
             // listening instead of leaving the overlay silently stuck.
+            if (isVoiceActiveRef.current) startListeningLoop();
+            return;
+        }
+
+        // Chrome has a known quirk where speak() called immediately after cancel()
+        // in the same tick can silently be dropped. A short delay, plus waiting for
+        // the voice list, avoids racing that.
+        await new Promise(r => setTimeout(r, 50));
+        const availableVoices = await waitForVoices();
+
+        if (availableVoices.length === 0) {
+            // Genuinely no TTS voice installed on this device/browser — speaking is
+            // not possible here regardless of what our code does. Say so once in the
+            // transcript instead of the overlay silently doing nothing forever.
+            appendMessage('(Spoken replies are not available in this browser — no text-to-speech voice is installed. You can still type or use "Voice to Text".)', 'bot');
             if (isVoiceActiveRef.current) startListeningLoop();
             return;
         }
@@ -331,13 +367,24 @@ export default function Chatbot() {
             if (voice) utterance.voice = voice;
             currentUtteranceRef.current = utterance;
 
+            // Guard against a Chrome bug where onend/onerror can simply never fire
+            // for a given utterance — without this, that would hang the overlay in
+            // "speaking" state forever instead of just skipping that sentence.
             await new Promise(resolve => {
-                utterance.onend = resolve;
-                utterance.onerror = resolve;
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(watchdog);
+                    resolve();
+                };
+                const watchdog = setTimeout(finish, 8000);
+                utterance.onend = finish;
+                utterance.onerror = finish;
                 try {
                     window.speechSynthesis.speak(utterance);
                 } catch (e) {
-                    resolve();
+                    finish();
                 }
             });
         }

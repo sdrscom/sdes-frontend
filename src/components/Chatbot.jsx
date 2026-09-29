@@ -191,6 +191,17 @@ export default function Chatbot() {
     // recording made just before closing still get sent and spoken aloud.
     const isVoiceActiveRef = useRef(false);
     const [voiceState, setVoiceState] = useState('connecting');
+    // Root cause of "live voice mode never speaks": playHumanVoice() is an async
+    // function that awaits across multiple sentences/delays. Its loop condition
+    // read the `voiceState` React state variable directly, which is captured once
+    // per render — by the time setVisualizerState('speaking') was called and the
+    // loop started, this closure's `voiceState` was still whatever it was BEFORE
+    // that render (e.g. 'listening' or 'processing'), so `voiceState !== 'speaking'`
+    // was true on the very first check and the loop broke immediately, before
+    // speechSynthesis.speak() was ever called. A transcript still appeared because
+    // that comes from a separate code path. Mirror the state into a ref, updated
+    // everywhere setVisualizerState runs, and read the ref inside the async loop.
+    const voiceStateRef = useRef('connecting');
     const [isThinking, setIsThinking] = useState(false);
     const [selectedAttachment, setSelectedAttachment] = useState(null);
     const [isDictating, setIsDictating] = useState(false);
@@ -294,6 +305,7 @@ export default function Chatbot() {
     }
 
     function setVisualizerState(state) {
+        voiceStateRef.current = state;
         setVoiceState(state);
     }
 
@@ -362,7 +374,7 @@ export default function Chatbot() {
         setVisualizerState('speaking');
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {
-            if (!isVoiceActiveRef.current || voiceState !== 'speaking') break;
+            if (!isVoiceActiveRef.current || voiceStateRef.current !== 'speaking') break;
             const sentence = audioQueueRef.current[i].trim();
             if (!sentence) continue;
 
@@ -394,7 +406,7 @@ export default function Chatbot() {
             });
         }
 
-        if (isVoiceActiveRef.current && voiceState === 'speaking') {
+        if (isVoiceActiveRef.current && voiceStateRef.current === 'speaking') {
             startListeningLoop();
         }
     }
@@ -538,7 +550,7 @@ export default function Chatbot() {
         recog.interimResults = true;
         recog.onstart = () => {
             setIsDictating(true);
-            setVoiceState('listening');
+            setVisualizerState('listening');
             speechBufferRef.current = '';
             dictationBaseRef.current = input || '';
         };
@@ -568,11 +580,11 @@ export default function Chatbot() {
         };
         recog.onerror = () => {
             setIsDictating(false);
-            setVoiceState('connecting');
+            setVisualizerState('connecting');
         };
         recog.onend = () => {
             setIsDictating(false);
-            setVoiceState('connecting');
+            setVisualizerState('connecting');
             // ensure input is focused after dictation ends
             try { messageInputRef.current?.focus(); } catch (e) {}
         };

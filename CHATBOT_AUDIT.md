@@ -1,6 +1,6 @@
 # SDRS Intelligent Trade Assistant — Audit & Backlog
 
-Living document. Last updated: 2026-09-27.
+Living document. Last updated: 2026-09-29.
 
 Legend: ✅ implemented · ⚠️ partially implemented · ❌ missing · ➖ not applicable / out of scope for a chatbot code change.
 
@@ -60,7 +60,7 @@ Key files referenced below:
 |---|---|---|
 | Typing/thinking indicator | ✅ | Animated dots shown while `isThinking`. |
 | Voice-to-text dictation | ✅ | Confirmed working correctly by the user, including language auto-detection. |
-| Live voice mode (spoken replies) | ✅ *(fixed this session)* | Was silently producing no audio (broken `translate.google.com` hack); replaced with native `speechSynthesis`, plus Chrome-specific hardening (voice-load wait, cancel/speak race delay, watchdog). **Awaiting final user confirmation it's now audible on their machine — see Remaining issues.** |
+| Live voice mode (spoken replies) | ✅ *(root cause found and fixed)* | Two stacked bugs: (1) the original `translate.google.com` TTS hack silently failed; replaced with native `speechSynthesis`. (2) The real root cause of "still completely silent" even after that: `playHumanVoice`'s speaking loop checked the `voiceState` React state variable directly inside an async function — a stale closure value captured at render time, not updated by the `setVisualizerState('speaking')` call made just before the loop. This made the loop's very first condition check (`voiceState !== 'speaking'`) true immediately, breaking out before `speechSynthesis.speak()` was ever invoked — matching the exact reported symptom (transcript worked, no audio, overlay stuck). Fixed with a `voiceStateRef` mirror, same pattern as the earlier `isVoiceActiveRef` fix. Confirmed the user's browser/OS can play TTS audio at all via a manual `speechSynthesis.speak(...)` test. |
 | Attachment upload UX | ✅ *(fixed this session)* | Oversized files rejected client-side with a friendly message; accepted files are actually transmitted now. |
 | Message-length guard (both directions) | ✅ *(new)* | Client-side guard in `Chatbot.jsx` (6000 chars) plus a real server-side enforcement in `validation.js` (previously nothing capped input length server-side). |
 | Clear/reset conversation control | ✅ *(new)* | See section 1. |
@@ -156,6 +156,7 @@ Key files referenced below:
    - Updated error-message handling to surface the backend's specific 4xx reason (validation/rate-limit/quota) instead of only a generic apology, and fixed to work correctly now that the backend forwards real status codes.
 6. **`backend/test/system-instruction.mjs`** — added regression tests for `validateChatRequest` (valid/empty/whitespace/missing/over-length/non-string/oversized-attachment cases) and for history capping (bounded length, starts with `user`, keeps the most recent turns).
 7. Installed `express-rate-limit@^8` as a backend dependency.
+8. **Fixed the actual root cause of silent live voice mode** (`src/components/Chatbot.jsx`): added `voiceStateRef` to mirror the `voiceState` React state into a ref updated inside `setVisualizerState()`, and swapped the two stale `voiceState` reads inside `playHumanVoice`'s async speaking loop (and its two remaining direct `setVoiceState` call sites in the dictation flow) to use the ref. The async loop was breaking on its first iteration, before `speechSynthesis.speak()` was ever called, because it read a closure-captured `voiceState` value from before the state update. Confirmed via the user's manual `speechSynthesis.speak(...)` DevTools test that the browser/OS TTS engine itself works fine — the bug was purely in this app's stale-state logic.
 
 All changes verified locally: `npm test` (backend) passes, `npm run build` (frontend) succeeds, `voiceLanguage.test.mjs` passes.
 
@@ -163,7 +164,6 @@ All changes verified locally: `npm test` (backend) passes, `npm run build` (fron
 
 ## Remaining issues
 
-- **Live voice mode audio — unconfirmed on the user's machine.** The Chrome-specific `speechSynthesis` hardening (wait-for-voices, cancel/speak delay, per-utterance watchdog, explicit "no TTS voice installed" fallback message) is deployed, but the user has not yet reported back the result of the requested DevTools diagnostic (`speechSynthesis.getVoices().length`, and whether a manual `speechSynthesis.speak(...)` call is audible). If it's still silent after this, the next hypothesis is a genuinely missing OS-level TTS voice pack on that machine (an environment issue, not a code issue) — Windows Settings → Time & Language → Speech would confirm this.
 - **In-memory rate limiting on serverless.** `express-rate-limit`'s default in-memory store doesn't share state across separate Vercel function instances/regions. It still helps against a single abusive client hammering one warm instance, but isn't a hard global cap. A proper fix would need a shared store (e.g. Upstash Redis) — not added, to avoid introducing a new paid dependency without the user's decision.
 - **Real tracking-backend integration** remains blocked on the client (SDRS) granting API/data access — separately being arranged by the user, outside this codebase.
 - **No true token-by-token streaming** from Gemini — the current "typing" effect chunks an already-complete reply. Cosmetically similar to streaming, but doesn't reduce time-to-first-visible-word the way real streaming would.
@@ -176,7 +176,7 @@ All changes verified locally: `npm test` (backend) passes, `npm run build` (fron
 1. **Rate limiting**: send >20 `/api/chat` requests within 60 seconds from one machine and confirm the 21st gets a clear "too many requests" message, not a raw error.
 2. **Validation**: try sending an empty message with no attachment, a message over 6000 characters, and a malformed JSON body directly (e.g. via `curl`/Postman, bypassing the widget) — confirm each gets a clean 400, not a 500 or a hang.
 3. **Attachment flow**: attach an image and ask a question about its visible content (not just its filename) in both English and Arabic; attach a file just under and just over the 3MB client limit.
-4. **Voice mode, end-to-end, on the actual reported environment (Chrome desktop)**: open live voice mode, speak a question, pause, and confirm an audible spoken reply — not just a text transcript. Also test on Chrome on a second machine to isolate a local voice-pack issue from a code issue.
+4. **Voice mode, end-to-end, on the actual reported environment (Chrome desktop)**: open live voice mode, speak a question, pause, and confirm an audible spoken reply — not just a text transcript. This exact scenario was broken until the `voiceStateRef` fix above; re-verify it explicitly rather than assuming the fix works from code review alone. Also test a multi-sentence reply (the loop runs once per sentence) and a follow-up question (confirms voice-mode memory still works).
 5. **Quota/429 path**: temporarily exhaust or fake a Gemini quota error and confirm the widget now shows the "usage limit reached" message (this path was silently broken until this session's fix — needs explicit re-verification since it was never actually exercised correctly before).
 6. **Clear conversation button**: verify it resets the visible transcript, that a subsequent question doesn't reference anything from before the clear, and that it also stops/resets live voice mode if it was active.
 7. **Reload-knowledge endpoint**: confirm a request without the `x-reload-secret` header (or with the wrong value) gets a 403, and that a request with the correct header (once `RELOAD_SECRET` is set in Vercel) still works. If `RELOAD_SECRET` is never configured in Vercel, this endpoint is now permanently disabled — decide if/when it's actually needed operationally.

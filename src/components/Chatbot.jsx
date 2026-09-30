@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import { detectVoiceLanguage } from '../utils/voiceLanguage.js';
+import { stripMarkdownForSpeech } from '../utils/ttsText.js';
 
 const getBackendUrl = () => {
     return window.location.hostname === 'localhost' 
@@ -333,11 +334,21 @@ export default function Chatbot() {
     // getVoices() can return [] before the async 'voiceschanged' event fires in some
     // browsers, so this is best-effort — omitting a voice still works fine, the
     // browser just falls back to its own default for the utterance's lang.
+    //
+    // Chrome typically exposes two kinds of voices per language: the OS's local
+    // SAPI/system voices (voice.localService === true — usually the flatter,
+    // more "robotic"-sounding ones) and Chrome's own cloud-backed Google voices
+    // (localService === false — noticeably more natural, and still completely
+    // free/built into the browser, no API calls or billing involved). Prefer the
+    // latter whenever one is available for the target language.
     function pickVoice(lang) {
         try {
             const voices = window.speechSynthesis.getVoices();
             const short = lang.split('-')[0];
-            return voices.find(v => v.lang === lang) || voices.find(v => v.lang?.startsWith(short)) || null;
+            const candidates = voices.filter(v => v.lang === lang || v.lang?.startsWith(short));
+            if (candidates.length === 0) return null;
+            const cloudVoice = candidates.find(v => v.localService === false);
+            return cloudVoice || candidates[0];
         } catch (e) {
             return null;
         }
@@ -390,7 +401,11 @@ export default function Chatbot() {
         }
 
         const lang = detectVoiceLanguage(text);
-        audioQueueRef.current = text.match(/[^.!?،۔]+[.!?،۔]+/g) || [text];
+        // Markdown (bullets, bold, links) reads aloud as disjointed fragments, not
+        // flowing speech — the voice-chat prompt now asks the model to avoid it,
+        // but this is a cheap defensive normalization in case any slips through.
+        const speakableText = stripMarkdownForSpeech(text);
+        audioQueueRef.current = speakableText.match(/[^.!?،۔]+[.!?،۔]+/g) || [speakableText];
         setVisualizerState('speaking');
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {
@@ -402,6 +417,13 @@ export default function Chatbot() {
             utterance.lang = lang;
             const voice = pickVoice(lang);
             if (voice) utterance.voice = voice;
+            // The default rate (1.0) reads noticeably flat and rushed on most
+            // browser TTS voices. A slightly slower, calmer pace sounds more like
+            // someone actually talking. Pitch is deliberately left at the engine's
+            // default — these are formant/concatenative voices, not neural ones,
+            // and shifting pitch away from default tends to make them sound worse
+            // (more "cartoonish"), not more human.
+            utterance.rate = 0.95;
             currentUtteranceRef.current = utterance;
 
             // Guard against a Chrome bug where onend/onerror can simply never fire
@@ -424,6 +446,14 @@ export default function Chatbot() {
                     finish();
                 }
             });
+
+            // A brief natural pause between sentences, like a real speaker taking a
+            // breath, instead of the engine cutting straight into the next
+            // utterance — that abrupt back-to-back restart is part of what makes
+            // consecutive short utterances sound mechanical.
+            if (isVoiceActiveRef.current && voiceStateRef.current === 'speaking' && i < audioQueueRef.current.length - 1) {
+                await new Promise(r => setTimeout(r, 180));
+            }
         }
 
         if (isVoiceActiveRef.current && voiceStateRef.current === 'speaking') {

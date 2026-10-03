@@ -172,6 +172,20 @@ const css = `
     border: 1px solid rgba(45, 59, 118, 0.14);
     font-family: "Segoe UI", system-ui, sans-serif;
     color: #1a2347;
+    /* Rolls out from the launcher button's corner when opening, and the same
+       transition reverses on close (see the chatMounted/chatEntered state
+       machine driving the .chat-open class) instead of the window instantly
+       popping in/out with no transition at all. */
+    transform-origin: bottom right;
+    transform: scale(0.82) translateY(26px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.24s ease;
+}
+#chat-container.chat-open {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
 }
 #chat-header {
     background: linear-gradient(135deg, #1a2347 0%, #2d3b76 100%);
@@ -186,7 +200,9 @@ const css = `
 }
 .header-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .header-logo {
-    width: 46px; height: 46px; background: #fff; border-radius: 14px; flex: 0 0 auto;
+    /* Sized to closely hug the robot icon's own drawn silhouette so only a
+       thin, even edge of white shows around it, instead of a big padded gap. */
+    width: 40px; height: 40px; background: #fff; border-radius: 12px; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     color: #2d3b76; font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
 }
@@ -208,8 +224,10 @@ const css = `
     box-shadow: 0 12px 28px rgba(26, 35, 71, 0.32), inset 0 2px 4px rgba(255,255,255,0.25);
     display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    animation: launcherPopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .chat-toggle-button:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 32px rgba(26, 35, 71, 0.38), inset 0 2px 4px rgba(255,255,255,0.25); }
+@keyframes launcherPopIn { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 /* A soft pulsing ring that radiates outward from the launcher to draw the eye
    without being as intrusive/animated as the greeting bubble itself. */
 .chat-toggle-button::before {
@@ -298,6 +316,10 @@ const css = `
         height: min(720px, calc(100vh - 24px));
         height: min(720px, calc(100dvh - 24px));
         border-radius: 16px;
+        /* Spans nearly the full width on mobile, so anchoring the roll-in/out
+           to the bottom-right corner (as on desktop, near the launcher)
+           would look lopsided — center it instead. */
+        transform-origin: bottom center;
     }
     .chat-toggle-button { right: 16px; bottom: 16px; }
     .chat-toggle-button .button-label { display: none; }
@@ -330,7 +352,7 @@ const css = `
     border-right: 1px solid rgba(45, 59, 118, 0.12); border-bottom: 1px solid rgba(45, 59, 118, 0.12);
 }
 .bubble-avatar {
-    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; background: #f4f6fb;
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; background: #f4f6fb;
     display: flex; align-items: center; justify-content: center;
 }
 .bubble-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -396,6 +418,12 @@ export default function Chatbot() {
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
+    // The window is kept mounted for a bit after isChatOpen flips back to
+    // false, and chatEntered drives the CSS class that actually animates —
+    // this is what makes the close transition play instead of the window
+    // just vanishing instantly when React unmounts it.
+    const [chatMounted, setChatMounted] = useState(false);
+    const [chatEntered, setChatEntered] = useState(false);
     const [isVoiceActive, setIsVoiceActive] = useState(false);
     // Mirrors isVoiceActive for async callbacks (MediaRecorder.onstop, fetch
     // continuations) that were created from an earlier render. Reading the state
@@ -476,6 +504,44 @@ export default function Chatbot() {
     useEffect(() => {
         if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     }, [messages]);
+
+    // Bug fix: the greeting text was set once, in the useState initializer
+    // above, from whatever language was active the moment the widget first
+    // mounted (usually page load). Toggling the site's EN/AR switch afterward
+    // correctly re-renders the header, pills, and placeholder (they read `t`
+    // fresh every render) — but that frozen greeting message never updated,
+    // so it could keep showing English after switching to Arabic (or vice
+    // versa). Refresh it when the language changes, but only while the
+    // conversation is still just that single greeting — a real exchange
+    // already in progress is left alone.
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length === 1 && prev[0].role === 'bot') {
+                return [{ ...prev[0], text: t.greeting, time: t.justNow }];
+            }
+            return prev;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [language]);
+
+    // Drives the open/close animation. The window stays mounted briefly after
+    // isChatOpen goes false so its exit transition can actually play, and
+    // chatEntered is flipped on a frame after mount (not in the same tick) so
+    // the browser has painted the "closed" starting styles before the CSS
+    // transition to "open" begins — otherwise it would just appear already
+    // open, with nothing to visibly transition from.
+    useEffect(() => {
+        if (isChatOpen) {
+            setChatMounted(true);
+            const rafId = requestAnimationFrame(() => {
+                requestAnimationFrame(() => setChatEntered(true));
+            });
+            return () => cancelAnimationFrame(rafId);
+        }
+        setChatEntered(false);
+        const unmountTimer = setTimeout(() => setChatMounted(false), 320);
+        return () => clearTimeout(unmountTimer);
+    }, [isChatOpen]);
 
     useEffect(() => {
         const fitInput = () => {
@@ -1126,12 +1192,12 @@ export default function Chatbot() {
     return (
         <>
             <style>{css}</style>
-            {!isChatOpen && showGreetingBubble && (
+            {!chatMounted && showGreetingBubble && (
                 <div className={`chat-greeting-bubble ${bubbleClosing ? 'closing' : ''}`} onClick={openChatFromBubble}>
                     <span className="bubble-sparkle bubble-sparkle-1">✦</span>
                     <span className="bubble-sparkle bubble-sparkle-2">✦</span>
                     <span className="bubble-sparkle bubble-sparkle-3">✦</span>
-                    <div className="bubble-avatar"><RoboticIcon size={20} idSuffix="bubble" /></div>
+                    <div className="bubble-avatar"><RoboticIcon size={26} idSuffix="bubble" /></div>
                     <div className="bubble-copy">
                         <strong>{t.bubbleTitle}</strong>
                         <span>{t.bubbleBody}</span>
@@ -1139,18 +1205,18 @@ export default function Chatbot() {
                     <button className="bubble-close" onClick={(e) => { e.stopPropagation(); dismissBubble(); }} aria-label={t.bubbleDismiss}>×</button>
                 </div>
             )}
-            {!isChatOpen && (
+            {!chatMounted && (
                 <button className="chat-toggle-button" onClick={openChat} title={t.toggleTitle}>
                     <span className="button-label">{t.toggleLabel}</span>
-                    <RoboticIcon size={32} idSuffix="toggle" />
+                    <RoboticIcon size={38} idSuffix="toggle" />
                 </button>
             )}
 
-            {isChatOpen && (
-                <div id="chat-container" ref={chatContainerRef}>
+            {chatMounted && (
+                <div id="chat-container" className={chatEntered ? 'chat-open' : ''} ref={chatContainerRef}>
                     <div id="chat-header">
                         <div className="header-identity">
-                            <div className="header-logo"><RoboticIcon size={38} idSuffix="header" /></div>
+                            <div className="header-logo"><RoboticIcon size={40} idSuffix="header" /></div>
                             <div className="header-copy">
                                 <div className="header-title">{t.headerTitle}</div>
                                 <div className="header-status"><span className="status-dot" /> {t.headerStatus}</div>

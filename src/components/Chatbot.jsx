@@ -11,11 +11,64 @@ const getBackendUrl = () => {
 
 const INITIAL_BOT_GREETING = "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?";
 
+// A small, friendly "robot head" mark used both on the floating launcher button
+// and in the chat header. Built as inline SVG (no image asset to load/cache)
+// using layered gradients and a glossy highlight to read as dimensional/"3D"
+// rather than a flat line icon, matching the brand's navy/red palette.
+// idSuffix keeps gradient ids unique whenever more than one instance could ever
+// render in the DOM at once (launcher + header + greeting bubble).
+function RoboticIcon({ size = 28, idSuffix = 'a' }) {
+    const headGrad = `botHead-${idSuffix}`;
+    const eyeGrad = `botEye-${idSuffix}`;
+    const antennaGrad = `botAntenna-${idSuffix}`;
+    return (
+        <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+                <linearGradient id={headGrad} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor="#5366e0" />
+                    <stop offset="55%" stopColor="#2d3b76" />
+                    <stop offset="100%" stopColor="#141b3d" />
+                </linearGradient>
+                <radialGradient id={eyeGrad} cx="42%" cy="32%" r="70%">
+                    <stop offset="0%" stopColor="#d6f9ff" />
+                    <stop offset="45%" stopColor="#3ddcff" />
+                    <stop offset="100%" stopColor="#0d8fb5" />
+                </radialGradient>
+                <linearGradient id={antennaGrad} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ff8f8f" />
+                    <stop offset="100%" stopColor="#b82227" />
+                </linearGradient>
+            </defs>
+
+            <line x1="24" y1="4" x2="24" y2="11" stroke="#9aa3c7" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="24" cy="4" r="3.2" fill={`url(#${antennaGrad})`} />
+
+            <rect x="6.5" y="10" width="35" height="30" rx="12" fill={`url(#${headGrad})`} />
+            <path d="M11 15c4.5-4.5 11-5.6 17.5-4.3 5.5 1.1 9.8 3.4 12 6.6-3.4-2.3-9.8-4.3-16.3-4.3-6.4 0-10.8 1.1-13.2 2z" fill="rgba(255,255,255,0.22)" />
+
+            <circle cx="17.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+            <circle cx="30.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+            <circle cx="16" cy="23.8" r="1.3" fill="#fff" />
+            <circle cx="29" cy="23.8" r="1.3" fill="#fff" />
+
+            <rect x="16.5" y="33.5" width="15" height="3" rx="1.5" fill="rgba(255,255,255,0.32)" />
+
+            <circle cx="7" cy="25" r="1.7" fill="#aab3d6" />
+            <circle cx="41" cy="25" r="1.7" fill="#aab3d6" />
+        </svg>
+    );
+}
+
 const css = `
 #chat-container, #chat-container * { box-sizing: border-box; }
 #chat-container {
     width: min(400px, calc(100vw - 32px));
     height: min(640px, calc(100vh - 104px));
+    /* Mobile browsers resize 100vh as the address bar/keyboard show or hide,
+       which can leave the input area hidden. 100dvh tracks the real visible
+       viewport instead; browsers that don't support dvh simply ignore this
+       line and keep the vh-based height above. */
+    height: min(640px, calc(100dvh - 104px));
     background: #ffffff;
     border-radius: 20px;
     box-shadow: 0 22px 50px rgba(26, 35, 71, 0.22), 0 2px 8px rgba(26, 35, 71, 0.08);
@@ -60,12 +113,21 @@ const css = `
 .header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .chat-toggle-button {
     position: fixed; bottom: 24px; right: 24px; width: 60px; height: 60px; border-radius: 50%;
-    background: #2d3b76; color: #fff; border: 3px solid #fff;
-    box-shadow: 0 12px 28px rgba(26, 35, 71, 0.32);
+    background: linear-gradient(145deg, #3a4a8f 0%, #2d3b76 55%, #161d42 100%);
+    color: #fff; border: 3px solid #fff;
+    box-shadow: 0 12px 28px rgba(26, 35, 71, 0.32), inset 0 2px 4px rgba(255,255,255,0.25);
     display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.chat-toggle-button:hover { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(26, 35, 71, 0.38); }
+.chat-toggle-button:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 32px rgba(26, 35, 71, 0.38), inset 0 2px 4px rgba(255,255,255,0.25); }
+/* A soft pulsing ring that radiates outward from the launcher to draw the eye
+   without being as intrusive/animated as the greeting bubble itself. */
+.chat-toggle-button::before {
+    content: ""; position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px;
+    border-radius: 50%; border: 2px solid rgba(61, 220, 151, 0.5);
+    animation: togglePulse 2.6s infinite ease-out; pointer-events: none;
+}
+@keyframes togglePulse { 0% { transform: scale(0.88); opacity: 0.9; } 100% { transform: scale(1.4); opacity: 0; } }
 .chat-toggle-button .button-label {
     position: absolute; right: 72px; top: 50%; transform: translateY(-50%);
     font-size: 13px; font-weight: 700; letter-spacing: 0.01em; color: #1a2347; white-space: nowrap;
@@ -138,11 +200,65 @@ const css = `
     padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .pill:hover { background: rgba(45, 59, 118, 0.06); border-color: #2d3b76; }
+.header-title, .header-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 @media (max-width: 520px) {
-    #chat-container { right: 12px; left: 12px; bottom: 12px; width: auto; height: min(720px, calc(100vh - 24px)); border-radius: 16px; }
+    #chat-container {
+        right: 12px; left: 12px; bottom: 12px; width: auto;
+        height: min(720px, calc(100vh - 24px));
+        height: min(720px, calc(100dvh - 24px));
+        border-radius: 16px;
+    }
     .chat-toggle-button { right: 16px; bottom: 16px; }
     .chat-toggle-button .button-label { display: none; }
+    /* iOS Safari auto-zooms the page when focusing an input with font-size
+       under 16px — bump it up only on small screens so typing a message
+       doesn't unexpectedly zoom the whole widget in. */
+    #message-input { font-size: 16px; }
+    /* Keep every tap target comfortably within Apple/Google's ~44px guidance
+       once the composer icons are squeezed onto a narrow screen. */
+    .icon-btn { width: 40px; height: 44px; }
+    #send-btn { width: 44px; height: 44px; }
+    .chat-greeting-bubble { right: 16px; left: 16px; max-width: none; bottom: 86px; }
+    .chat-greeting-bubble::after { display: none; }
 }
+
+/* GREETING BUBBLE */
+.chat-greeting-bubble {
+    position: fixed; bottom: 94px; right: 20px; max-width: 240px; z-index: 9998;
+    background: #fff; color: #1a2347; padding: 12px 30px 12px 12px; border-radius: 16px;
+    box-shadow: 0 14px 32px rgba(26, 35, 71, 0.26), 0 2px 8px rgba(26, 35, 71, 0.1);
+    border: 1px solid rgba(45, 59, 118, 0.12);
+    display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    animation: bubblePop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chat-greeting-bubble.closing { animation: bubbleOut 0.22s ease forwards; }
+.chat-greeting-bubble::after {
+    content: ""; position: absolute; bottom: -6px; right: 30px; width: 14px; height: 14px;
+    background: #fff; transform: rotate(45deg);
+    border-right: 1px solid rgba(45, 59, 118, 0.12); border-bottom: 1px solid rgba(45, 59, 118, 0.12);
+}
+.bubble-avatar {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; background: #f4f6fb;
+    display: flex; align-items: center; justify-content: center;
+}
+.bubble-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bubble-copy strong { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.bubble-copy span { font-size: 12.5px; font-weight: 500; line-height: 1.4; color: #4c5578; }
+.bubble-close {
+    position: absolute; top: 7px; right: 8px; width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(45, 59, 118, 0.08); border: none; color: #5c6784; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; padding: 0;
+}
+.bubble-close:hover { background: rgba(45, 59, 118, 0.16); }
+.bubble-sparkle { position: absolute; pointer-events: none; font-size: 13px; color: #ffcb4d; animation: sparkleTwinkle 1.8s infinite ease-in-out; }
+.bubble-sparkle-1 { top: -9px; left: 14px; animation-delay: 0s; }
+.bubble-sparkle-2 { top: 10px; right: -7px; font-size: 9px; color: #6fd6ff; animation-delay: 0.55s; }
+.bubble-sparkle-3 { bottom: -7px; left: 44px; font-size: 10px; color: #ff9fb0; animation-delay: 1.05s; }
+@keyframes bubblePop { from { opacity: 0; transform: translateY(14px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes bubbleOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(0.92); } }
+@keyframes sparkleTwinkle { 0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(18deg); } }
 
 /* VOICE OVERLAY */
 #voice-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.98); z-index: 100; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 40px 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
@@ -206,6 +322,12 @@ export default function Chatbot() {
     const [isThinking, setIsThinking] = useState(false);
     const [selectedAttachment, setSelectedAttachment] = useState(null);
     const [isDictating, setIsDictating] = useState(false);
+    // A one-time attention-getting bubble shown a few seconds after a visitor
+    // lands on the page, similar to what most live-chat widgets do. Tracked in
+    // sessionStorage (not state alone) so navigating between pages in the same
+    // visit doesn't re-show it on every single page load.
+    const [showGreetingBubble, setShowGreetingBubble] = useState(false);
+    const [bubbleClosing, setBubbleClosing] = useState(false);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
@@ -268,6 +390,41 @@ export default function Chatbot() {
         window.addEventListener('resize', fitInput);
         return () => window.removeEventListener('resize', fitInput);
     }, []);
+
+    useEffect(() => {
+        if (isChatOpen) return;
+        let alreadyShown = false;
+        try { alreadyShown = sessionStorage.getItem('sdrs_chat_bubble_shown') === '1'; } catch (e) {}
+        if (alreadyShown) return;
+
+        const showTimer = setTimeout(() => {
+            setShowGreetingBubble(true);
+            try { sessionStorage.setItem('sdrs_chat_bubble_shown', '1'); } catch (e) {}
+        }, 2500);
+
+        return () => clearTimeout(showTimer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!showGreetingBubble) return;
+        const hideTimer = setTimeout(() => dismissBubble(), 9000);
+        return () => clearTimeout(hideTimer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showGreetingBubble]);
+
+    function dismissBubble() {
+        setBubbleClosing(true);
+        setTimeout(() => {
+            setShowGreetingBubble(false);
+            setBubbleClosing(false);
+        }, 220);
+    }
+
+    function openChatFromBubble() {
+        dismissBubble();
+        openChat();
+    }
 
     function appendMessage(text, role) {
         setMessages(prev => [...prev, { role, text, time: new Date().toLocaleTimeString() }]);
@@ -851,10 +1008,23 @@ export default function Chatbot() {
     return (
         <>
             <style>{css}</style>
+            {!isChatOpen && showGreetingBubble && (
+                <div className={`chat-greeting-bubble ${bubbleClosing ? 'closing' : ''}`} onClick={openChatFromBubble}>
+                    <span className="bubble-sparkle bubble-sparkle-1">✦</span>
+                    <span className="bubble-sparkle bubble-sparkle-2">✦</span>
+                    <span className="bubble-sparkle bubble-sparkle-3">✦</span>
+                    <div className="bubble-avatar"><RoboticIcon size={20} idSuffix="bubble" /></div>
+                    <div className="bubble-copy">
+                        <strong>Hi, I'm Fares 👋</strong>
+                        <span>Need help with trade, customs, or logistics? Ask me anything.</span>
+                    </div>
+                    <button className="bubble-close" onClick={(e) => { e.stopPropagation(); dismissBubble(); }} aria-label="Dismiss">×</button>
+                </div>
+            )}
             {!isChatOpen && (
-                <button className="chat-toggle-button" onClick={openChat} title="Open SDRS chat">
-                    <span className="button-label">Talk to SDRS</span>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M7 10h10M7 14h7"/></svg>
+                <button className="chat-toggle-button" onClick={openChat} title="Chat with Fares">
+                    <span className="button-label">Chat with Fares</span>
+                    <RoboticIcon size={32} idSuffix="toggle" />
                 </button>
             )}
 
@@ -862,7 +1032,7 @@ export default function Chatbot() {
                 <div id="chat-container">
                     <div id="chat-header">
                         <div className="header-identity">
-                            <div className="header-logo">SDRS</div>
+                            <div className="header-logo"><RoboticIcon size={24} idSuffix="header" /></div>
                             <div className="header-copy">
                                 <div className="header-title">Fares</div>
                                 <div className="header-status"><span className="status-dot" /> SDRS Trade Assistant</div>

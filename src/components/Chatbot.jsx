@@ -9,7 +9,7 @@ const getBackendUrl = () => {
         : 'https://sdes-backend.vercel.app';
 };
 
-const INITIAL_BOT_GREETING = 'Hello! I am the SDRS Intelligent Trade Assistant. How can I help you today?';
+const INITIAL_BOT_GREETING = "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?";
 
 const css = `
 #chat-container, #chat-container * { box-sizing: border-box; }
@@ -407,6 +407,22 @@ export default function Chatbot() {
         const speakableText = stripMarkdownForSpeech(text);
         audioQueueRef.current = speakableText.match(/[^.!?،۔]+[.!?،۔]+/g) || [speakableText];
         setVisualizerState('speaking');
+
+        // If the reply is Arabic/Urdu but this browser/OS has no voice installed
+        // for that language at all, speechSynthesis will still try to speak it —
+        // usually with a default English voice reading the script under English
+        // phonetic rules, which comes out as garbled noise rather than Arabic,
+        // not just "accented". The reply text itself is still correct (it's shown
+        // in the transcript normally); only the audio is affected. Warn once,
+        // non-blockingly, instead of leaving the user confused by bad audio with
+        // no explanation.
+        const langPrefix = lang.split('-')[0];
+        const hasMatchingVoice = availableVoices.some(v => v.lang === lang || v.lang?.toLowerCase()?.startsWith(langPrefix));
+        if (!hasMatchingVoice && langPrefix !== 'en') {
+            console.warn(`[voice] no installed TTS voice found for "${lang}" — spoken audio may not sound right. Available voice langs:`, availableVoices.map(v => v.lang));
+            const languageName = lang === 'ar-SA' ? 'Arabic' : lang === 'ur-PK' ? 'Urdu' : lang;
+            appendMessage(`(This browser doesn't have a ${languageName} voice installed, so the spoken reply above may not sound right — the text itself is correct. You can still type or use "Voice to Text".)`, 'bot');
+        }
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {
             if (!isVoiceActiveRef.current || voiceStateRef.current !== 'speaking') break;
@@ -848,8 +864,8 @@ export default function Chatbot() {
                         <div className="header-identity">
                             <div className="header-logo">SDRS</div>
                             <div className="header-copy">
-                                <div className="header-title">SDRS Assistant</div>
-                                <div className="header-status"><span className="status-dot" /> Trade support</div>
+                                <div className="header-title">Fares</div>
+                                <div className="header-status"><span className="status-dot" /> SDRS Trade Assistant</div>
                             </div>
                         </div>
                         <div className="header-actions">

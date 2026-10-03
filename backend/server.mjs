@@ -78,7 +78,7 @@ const GEMINI_TIMEOUT_MS = 25000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
-        const { message, history, attachmentBase64, attachmentMimeType } = req.body;
+        const { message, history, attachmentBase64, attachmentMimeType, uiLanguage } = req.body;
 
         const validation = validateChatRequest(req.body);
         if (!validation.valid) {
@@ -94,6 +94,19 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         // placeholder like "[Attachment: invoice.pdf (245 KB)]" — Gemini never saw the
         // file itself, so it could not answer any question about its contents.
         const messageParts = buildMessageParts(message, attachmentBase64, attachmentMimeType);
+
+        // The site has its own English/Arabic toggle. The system prompt already
+        // replies in whichever language the user's message is clearly written in,
+        // but that does nothing for an ambiguous first message (e.g. just a name,
+        // a number, or "hi") sent while the site is set to Arabic — previously
+        // that always defaulted to English regardless. Only ever honor the exact
+        // literal value 'ar' here; anything else (including an absent field) is
+        // ignored rather than interpolated, since this comes from client input.
+        if (uiLanguage === 'ar') {
+            messageParts.unshift({
+                text: "[Context, not part of the user's message: this chat widget's interface is currently set to Arabic. If the message below is ambiguous about language (e.g. a short greeting, a name, or a number), reply in Arabic. If the message is clearly written in English or another language, reply in that language instead.]"
+            });
+        }
 
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
@@ -163,7 +176,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
 
 app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
     try {
-        const { audioBase64, history } = req.body;
+        const { audioBase64, history, uiLanguage } = req.body;
 
         if (!audioBase64) {
             throw new Error('No audio data received from frontend.');
@@ -193,7 +206,13 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         // read aloud sentence-by-sentence with no connecting words is a big part of
         // why live voice mode sounds stilted/robotic even with a good TTS voice.
         // Explicitly override that formatting rule for this endpoint only.
-        const prompt = `Listen to the audio. First, transcribe exactly what the user said in their original language. Then, provide a helpful answer as Fares, the SDRS AI Assistant. CRITICAL: You MUST write your 'reply' in the EXACT SAME LANGUAGE that the user spoke in the audio (e.g., if they speak Urdu, write your reply in Urdu script. If they speak Arabic, reply in Arabic). This reply will be read aloud by text-to-speech, not displayed as text, so write it the way a knowledgeable person would actually speak on a phone call: short, flowing, natural sentences connected with normal spoken words like "and", "also", or "on top of that". Do NOT use bullet points, numbered lists, markdown formatting (no asterisks, dashes, or headers), or any symbols that would sound strange read aloud. Keep it warm and concise — 2 to 4 short sentences is usually enough. Output ONLY valid JSON. Format: {"transcript": "what they said", "reply": "your answer"}`;
+        // Same site-wide language hint as /api/chat: only acted on for genuinely
+        // ambiguous audio (e.g. a one-word reply, or speech in an unclear accent)
+        // where the model can't otherwise tell what language to answer in.
+        const uiLanguageHint = uiLanguage === 'ar'
+            ? ' This widget\'s interface is currently set to Arabic — if the speaker\'s language is genuinely ambiguous or unclear from the audio, default to replying in Arabic.'
+            : '';
+        const prompt = `Listen to the audio. First, transcribe exactly what the user said in their original language. Then, provide a helpful answer as Fares, the SDRS AI Assistant. CRITICAL: You MUST write your 'reply' in the EXACT SAME LANGUAGE that the user spoke in the audio (e.g., if they speak Urdu, write your reply in Urdu script. If they speak Arabic, reply in Arabic).${uiLanguageHint} This reply will be read aloud by text-to-speech, not displayed as text, so write it the way a knowledgeable person would actually speak on a phone call: short, flowing, natural sentences connected with normal spoken words like "and", "also", or "on top of that". Do NOT use bullet points, numbered lists, markdown formatting (no asterisks, dashes, or headers), or any symbols that would sound strange read aloud. Keep it warm and concise — 2 to 4 short sentences is usually enough. Output ONLY valid JSON. Format: {"transcript": "what they said", "reply": "your answer"}`;
 
         const audioPart = {
             inlineData: {

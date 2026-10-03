@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import { detectVoiceLanguage } from '../utils/voiceLanguage.js';
 import { stripMarkdownForSpeech } from '../utils/ttsText.js';
+import { useLanguage } from '../context/LanguageContext';
 
 const getBackendUrl = () => {
     return window.location.hostname === 'localhost' 
@@ -9,7 +10,96 @@ const getBackendUrl = () => {
         : 'https://sdes-backend.vercel.app';
 };
 
-const INITIAL_BOT_GREETING = "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?";
+// The website has a site-wide English/Arabic toggle (LanguageContext). The
+// widget's own UI text (not just the AI's replies) should follow that same
+// toggle by default, instead of always showing English regardless of which
+// language the visitor has the site set to.
+const CHATBOT_TEXT = {
+    en: {
+        greeting: "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?",
+        headerTitle: 'Fares',
+        toggleLabel: 'Chat with Fares',
+        toggleTitle: 'Chat with Fares',
+        headerStatus: 'SDRS Trade Assistant',
+        clearTitle: 'Clear conversation',
+        closeTitle: 'Close chat',
+        quickPills: ['About SDRS', 'Services', 'Investment', 'Contact Us'],
+        attachTitle: 'Attach File',
+        placeholderThinking: 'Assistant is thinking…',
+        placeholderListening: 'Listening for speech…',
+        placeholderAttachment: 'Add a note and send',
+        placeholderDefault: 'Type a message...',
+        voiceTitle: 'Start Voice Mode',
+        micTitle: 'Voice to Text',
+        statusSpeaking: 'Speaking...',
+        statusListening: 'Listening...',
+        statusProcessing: 'Processing...',
+        statusConnecting: 'Connecting...',
+        interruptHint: 'Tap to interrupt',
+        bubbleTitle: "Hi, I'm Fares 👋",
+        bubbleBody: 'Need help with trade, customs, or logistics? Ask me anything.',
+        bubbleDismiss: 'Dismiss',
+        removeAttachment: 'Remove attachment',
+        thinkingLabel: 'Thinking…',
+        justNow: 'Just now',
+        fileTooLarge: (kb, mb) => `That file is too large (${kb} KB). Please attach something under ${mb} MB.`,
+        unsupportedFileType: (type) => `That file type (${type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`,
+        speechToTextUnavailable: 'Speech-to-text is not available in this browser.',
+        micBlocked: 'Microphone access was blocked. Please allow microphone permission to use Voice to Text.',
+        noMic: 'No microphone was found. Please connect one to use Voice to Text.',
+        noTtsVoice: '(Spoken replies are not available in this browser — no text-to-speech voice is installed. You can still type or use "Voice to Text".)',
+        noMatchingVoice: (languageName) => `(This browser doesn't have a ${languageName} voice installed, so the spoken reply above may not sound right — the text itself is correct. You can still type or use "Voice to Text".)`,
+        languageNameArabic: 'Arabic',
+        languageNameUrdu: 'Urdu',
+        attachmentReadFailed: 'Sorry, I could not read that attachment. Please try again.',
+        messageTooLong: (len, max) => `That message is too long (${len} characters). Please keep it under ${max} characters.`,
+        noResponse: 'Sorry, the assistant could not respond right now.',
+        noReplyGenerated: 'Sorry, I could not generate a reply right now.',
+        reachFailed: 'Sorry, I could not reach the assistant right now.'
+    },
+    ar: {
+        greeting: 'مرحباً! أنا فارس، مساعد التجارة في SDRS. كيف يمكنني مساعدتك اليوم؟',
+        headerTitle: 'فارس',
+        toggleLabel: 'تحدث مع فارس',
+        toggleTitle: 'تحدث مع فارس',
+        headerStatus: 'مساعد التجارة في SDRS',
+        clearTitle: 'مسح المحادثة',
+        closeTitle: 'إغلاق المحادثة',
+        quickPills: ['عن SDRS', 'الخدمات', 'الاستثمار', 'اتصل بنا'],
+        attachTitle: 'إرفاق ملف',
+        placeholderThinking: 'المساعد يفكر…',
+        placeholderListening: 'يستمع للصوت…',
+        placeholderAttachment: 'أضف ملاحظة وأرسل',
+        placeholderDefault: 'اكتب رسالة...',
+        voiceTitle: 'بدء وضع الصوت',
+        micTitle: 'تحويل الصوت إلى نص',
+        statusSpeaking: 'يتحدث...',
+        statusListening: 'يستمع...',
+        statusProcessing: 'جاري المعالجة...',
+        statusConnecting: 'جاري الاتصال...',
+        interruptHint: 'اضغط للمقاطعة',
+        bubbleTitle: 'مرحباً، أنا فارس 👋',
+        bubbleBody: 'تحتاج مساعدة بخصوص التجارة أو الجمارك أو الخدمات اللوجستية؟ اسألني عن أي شيء.',
+        bubbleDismiss: 'إغلاق',
+        removeAttachment: 'إزالة المرفق',
+        thinkingLabel: 'يُفكر…',
+        justNow: 'الآن',
+        fileTooLarge: (kb, mb) => `هذا الملف كبير جدًا (${kb} كيلوبايت). يرجى إرفاق ملف أصغر من ${mb} ميجابايت.`,
+        unsupportedFileType: (type) => `نوع هذا الملف (${type || 'غير معروف'}) غير مدعوم حاليًا. يرجى إرفاق صورة أو ملف PDF أو ملف نصي.`,
+        speechToTextUnavailable: 'تحويل الصوت إلى نص غير متوفر في هذا المتصفح.',
+        micBlocked: 'تم حظر الوصول إلى الميكروفون. يرجى السماح بإذن الميكروفون لاستخدام "تحويل الصوت إلى نص".',
+        noMic: 'لم يتم العثور على ميكروفون. يرجى توصيل ميكروفون لاستخدام "تحويل الصوت إلى نص".',
+        noTtsVoice: '(الردود الصوتية غير متوفرة في هذا المتصفح — لا يوجد صوت لتحويل النص إلى كلام. يمكنك الكتابة أو استخدام "تحويل الصوت إلى نص".)',
+        noMatchingVoice: (languageName) => `(هذا المتصفح لا يحتوي على صوت ${languageName} مثبت، فقد لا يبدو الرد الصوتي أعلاه صحيحًا — النص نفسه صحيح. يمكنك الكتابة أو استخدام "تحويل الصوت إلى نص".)`,
+        languageNameArabic: 'العربية',
+        languageNameUrdu: 'الأردية',
+        attachmentReadFailed: 'عذرًا، تعذّر قراءة هذا المرفق. يرجى المحاولة مرة أخرى.',
+        messageTooLong: (len, max) => `هذه الرسالة طويلة جدًا (${len} حرفًا). يرجى أن تكون أقل من ${max} حرفًا.`,
+        noResponse: 'عذرًا، تعذّر على المساعد الرد حاليًا.',
+        noReplyGenerated: 'عذرًا، تعذّر إنشاء رد الآن.',
+        reachFailed: 'عذرًا، تعذّر الوصول إلى المساعد حاليًا.'
+    }
+};
 
 // A small, friendly "robot head" mark used both on the floating launcher button
 // and in the chat header. Built as inline SVG (no image asset to load/cache)
@@ -295,8 +385,14 @@ const css = `
 `;
 
 export default function Chatbot() {
+    // Follows the site-wide English/Arabic toggle so the widget's own text
+    // (not just the AI's replies) defaults to whichever language the visitor
+    // currently has the site set to.
+    const { language } = useLanguage();
+    const t = CHATBOT_TEXT[language] || CHATBOT_TEXT.en;
+
     const [messages, setMessages] = useState([
-        { role: 'bot', text: INITIAL_BOT_GREETING, time: 'Just now' }
+        { role: 'bot', text: t.greeting, time: t.justNow }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -471,13 +567,13 @@ export default function Chatbot() {
         if (!file) return;
 
         if (file.size > MAX_ATTACHMENT_BYTES) {
-            appendMessage(`That file is too large (${Math.round(file.size / 1024)} KB). Please attach something under ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB.`, 'bot');
+            appendMessage(t.fileTooLarge(Math.round(file.size / 1024), Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)), 'bot');
             return;
         }
 
         const isAccepted = ACCEPTED_ATTACHMENT_TYPES.some(prefix => file.type?.startsWith(prefix));
         if (!isAccepted) {
-            appendMessage(`That file type (${file.type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`, 'bot');
+            appendMessage(t.unsupportedFileType(file.type), 'bot');
             return;
         }
 
@@ -569,7 +665,7 @@ export default function Chatbot() {
             // Genuinely no TTS voice installed on this device/browser — speaking is
             // not possible here regardless of what our code does. Say so once in the
             // transcript instead of the overlay silently doing nothing forever.
-            appendMessage('(Spoken replies are not available in this browser — no text-to-speech voice is installed. You can still type or use "Voice to Text".)', 'bot');
+            appendMessage(t.noTtsVoice, 'bot');
             if (isVoiceActiveRef.current) startListeningLoop();
             return;
         }
@@ -594,8 +690,8 @@ export default function Chatbot() {
         const hasMatchingVoice = availableVoices.some(v => v.lang === lang || v.lang?.toLowerCase()?.startsWith(langPrefix));
         if (!hasMatchingVoice && langPrefix !== 'en') {
             console.warn(`[voice] no installed TTS voice found for "${lang}" — spoken audio may not sound right. Available voice langs:`, availableVoices.map(v => v.lang));
-            const languageName = lang === 'ar-SA' ? 'Arabic' : lang === 'ur-PK' ? 'Urdu' : lang;
-            appendMessage(`(This browser doesn't have a ${languageName} voice installed, so the spoken reply above may not sound right — the text itself is correct. You can still type or use "Voice to Text".)`, 'bot');
+            const languageName = lang === 'ar-SA' ? t.languageNameArabic : lang === 'ur-PK' ? t.languageNameUrdu : lang;
+            appendMessage(t.noMatchingVoice(languageName), 'bot');
         }
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {
@@ -739,7 +835,7 @@ export default function Chatbot() {
             const response = await fetch(`${backendUrl}/api/voice-chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audioBase64: base64Audio, history: voiceHistoryRef.current })
+                body: JSON.stringify({ audioBase64: base64Audio, history: voiceHistoryRef.current, uiLanguage: language })
             });
             const data = await response.json();
 
@@ -775,7 +871,7 @@ export default function Chatbot() {
     function startSpeechToText() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            appendMessage('Speech-to-text is not available in this browser.', 'bot');
+            appendMessage(t.speechToTextUnavailable, 'bot');
             return;
         }
 
@@ -834,9 +930,9 @@ export default function Chatbot() {
                 dictationFatalErrorRef.current = true;
                 dictationActiveRef.current = false;
                 if (event.error === 'not-allowed') {
-                    appendMessage('Microphone access was blocked. Please allow microphone permission to use Voice to Text.', 'bot');
+                    appendMessage(t.micBlocked, 'bot');
                 } else if (event.error === 'audio-capture') {
-                    appendMessage('No microphone was found. Please connect one to use Voice to Text.', 'bot');
+                    appendMessage(t.noMic, 'bot');
                 }
             }
             // The browser fires onend right after onerror; let onend decide whether
@@ -930,7 +1026,7 @@ export default function Chatbot() {
         if (isVoiceActive) {
             closeVoice();
         }
-        setMessages([{ role: 'bot', text: INITIAL_BOT_GREETING, time: 'Just now' }]);
+        setMessages([{ role: 'bot', text: t.greeting, time: t.justNow }]);
         conversationHistoryRef.current = [];
         voiceHistoryRef.current = [];
         setSelectedAttachment(null);
@@ -957,7 +1053,7 @@ export default function Chatbot() {
                 attachmentBase64 = await readFileAsDataUrl(attachment);
             } catch (e) {
                 console.error('Failed to read attachment', e);
-                appendMessage('Sorry, I could not read that attachment. Please try again.', 'bot');
+                appendMessage(t.attachmentReadFailed, 'bot');
                 return;
             }
         }
@@ -965,7 +1061,7 @@ export default function Chatbot() {
         if (!finalMessage) return;
 
         if (typedMessage.length > MAX_MESSAGE_LENGTH) {
-            appendMessage(`That message is too long (${typedMessage.length} characters). Please keep it under ${MAX_MESSAGE_LENGTH} characters.`, 'bot');
+            appendMessage(t.messageTooLong(typedMessage.length, MAX_MESSAGE_LENGTH), 'bot');
             return;
         }
 
@@ -985,6 +1081,11 @@ export default function Chatbot() {
                 body: JSON.stringify({
                     message: typedMessage || (attachment ? `Please review this attachment: ${attachment.name}` : ''),
                     history,
+                    // Lets the backend default to Arabic when the site is set to
+                    // Arabic and the message itself doesn't clearly indicate a
+                    // different language, instead of only reacting after the
+                    // visitor has already typed in Arabic at least once.
+                    uiLanguage: language,
                     ...(attachmentBase64 ? { attachmentBase64, attachmentMimeType: attachment.type || 'application/octet-stream' } : {})
                 })
             });
@@ -999,7 +1100,7 @@ export default function Chatbot() {
                 // error (500) falls back to the generic apology.
                 const message = response.status !== 500 && botReply
                     ? botReply
-                    : 'Sorry, the assistant could not respond right now.';
+                    : t.noResponse;
                 appendMessage(message, 'bot');
                 return;
             }
@@ -1012,11 +1113,11 @@ export default function Chatbot() {
                     { role: 'model', parts: [{ text: botReply }] }
                 ];
             } else {
-                appendMessage('Sorry, I could not generate a reply right now.', 'bot');
+                appendMessage(t.noReplyGenerated, 'bot');
             }
         } catch (error) {
             console.error('Chat request failed', error);
-            appendMessage('Sorry, I could not reach the assistant right now.', 'bot');
+            appendMessage(t.reachFailed, 'bot');
         } finally {
             setIsThinking(false);
         }
@@ -1032,15 +1133,15 @@ export default function Chatbot() {
                     <span className="bubble-sparkle bubble-sparkle-3">✦</span>
                     <div className="bubble-avatar"><RoboticIcon size={20} idSuffix="bubble" /></div>
                     <div className="bubble-copy">
-                        <strong>Hi, I'm Fares 👋</strong>
-                        <span>Need help with trade, customs, or logistics? Ask me anything.</span>
+                        <strong>{t.bubbleTitle}</strong>
+                        <span>{t.bubbleBody}</span>
                     </div>
-                    <button className="bubble-close" onClick={(e) => { e.stopPropagation(); dismissBubble(); }} aria-label="Dismiss">×</button>
+                    <button className="bubble-close" onClick={(e) => { e.stopPropagation(); dismissBubble(); }} aria-label={t.bubbleDismiss}>×</button>
                 </div>
             )}
             {!isChatOpen && (
-                <button className="chat-toggle-button" onClick={openChat} title="Chat with Fares">
-                    <span className="button-label">Chat with Fares</span>
+                <button className="chat-toggle-button" onClick={openChat} title={t.toggleTitle}>
+                    <span className="button-label">{t.toggleLabel}</span>
                     <RoboticIcon size={32} idSuffix="toggle" />
                 </button>
             )}
@@ -1051,15 +1152,15 @@ export default function Chatbot() {
                         <div className="header-identity">
                             <div className="header-logo"><RoboticIcon size={38} idSuffix="header" /></div>
                             <div className="header-copy">
-                                <div className="header-title">Fares</div>
-                                <div className="header-status"><span className="status-dot" /> SDRS Trade Assistant</div>
+                                <div className="header-title">{t.headerTitle}</div>
+                                <div className="header-status"><span className="status-dot" /> {t.headerStatus}</div>
                             </div>
                         </div>
                         <div className="header-actions">
-                            <button className="chat-clear-btn" onClick={clearConversation} title="Clear conversation" disabled={isThinking}>
+                            <button className="chat-clear-btn" onClick={clearConversation} title={t.clearTitle} disabled={isThinking}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                             </button>
-                            <button className="chat-close-btn" onClick={hideChat} title="Close chat">
+                            <button className="chat-close-btn" onClick={hideChat} title={t.closeTitle}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                             </button>
                         </div>
@@ -1081,7 +1182,7 @@ export default function Chatbot() {
                                     <span className="typing-dot" />
                                     <span className="typing-dot" />
                                 </div>
-                                <div className="timestamp">Thinking…</div>
+                                <div className="timestamp">{t.thinkingLabel}</div>
                             </div>
                         )}
                         <div ref={endRef} />
@@ -1089,7 +1190,7 @@ export default function Chatbot() {
 
                     {messages.length <= 1 && (
                         <div className="quick-pills" aria-hidden={isDictating}>
-                            {['About SDRS', 'Services', 'Investment', 'Contact Us'].map((s, i) => (
+                            {t.quickPills.map((s, i) => (
                                 <button key={i} type="button" className="pill" onClick={() => handleSendMessage(s)} disabled={isThinking}>
                                     {s}
                                 </button>
@@ -1099,14 +1200,14 @@ export default function Chatbot() {
 
                     <div id="input-area">
                         <input type="file" ref={fileInputRef} accept="image/*,application/pdf,text/plain" style={{ display: 'none' }} onChange={handleAttachmentSelect} />
-                        <button className="icon-btn" title="Attach File" onClick={triggerFileUpload}>
+                        <button className="icon-btn" title={t.attachTitle} onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </button>
                         <div className="composer">
                             {selectedAttachment && (
                                 <div className="attachment-chip">
                                     <span>{selectedAttachment.name}</span>
-                                    <button type="button" onClick={() => setSelectedAttachment(null)} aria-label="Remove attachment">×</button>
+                                    <button type="button" onClick={() => setSelectedAttachment(null)} aria-label={t.removeAttachment}>×</button>
                                 </div>
                             )}
                             <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
@@ -1123,12 +1224,12 @@ export default function Chatbot() {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} rows={1} dir="auto" placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                            }} rows={1} dir="auto" placeholder={isThinking ? t.placeholderThinking : isDictating ? t.placeholderListening : selectedAttachment ? t.placeholderAttachment : t.placeholderDefault} autoComplete="off" disabled={isThinking} />
                         </div>
-                        <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
+                        <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title={t.voiceTitle} onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title="Voice to Text" onClick={startSpeechToText}>
+                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title={t.micTitle} onClick={startSpeechToText}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                         </button>
                         <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
@@ -1141,11 +1242,11 @@ export default function Chatbot() {
                                 <div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div>
                                 <div className="speaker-dot"></div>
                             </div>
-                            <div className="interrupt-hint" id="interrupt-hint-text">Tap to interrupt</div>
+                            <div className="interrupt-hint" id="interrupt-hint-text">{t.interruptHint}</div>
                         </div>
                         <div className="voice-controls">
                             <button id="close-voice-btn" className="voice-btn-circle" onClick={closeVoice}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                            <div id="voice-status-text">{voiceState === 'speaking' ? 'Speaking...' : voiceState === 'listening' ? 'Listening...' : voiceState === 'processing' ? 'Processing...' : 'Connecting...'}</div>
+                            <div id="voice-status-text">{voiceState === 'speaking' ? t.statusSpeaking : voiceState === 'listening' ? t.statusListening : voiceState === 'processing' ? t.statusProcessing : t.statusConnecting}</div>
                             <button className="voice-btn-circle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
                         </div>
                     </div>

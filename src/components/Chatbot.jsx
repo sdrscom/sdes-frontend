@@ -96,7 +96,7 @@ const css = `
 }
 .header-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .header-logo {
-    width: 40px; height: 40px; background: #fff; border-radius: 12px; flex: 0 0 auto;
+    width: 46px; height: 46px; background: #fff; border-radius: 14px; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     color: #2d3b76; font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
 }
@@ -328,6 +328,7 @@ export default function Chatbot() {
     // visit doesn't re-show it on every single page load.
     const [showGreetingBubble, setShowGreetingBubble] = useState(false);
     const [bubbleClosing, setBubbleClosing] = useState(false);
+    const chatContainerRef = useRef(null);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
@@ -412,6 +413,22 @@ export default function Chatbot() {
         return () => clearTimeout(hideTimer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showGreetingBubble]);
+
+    // Clicking anywhere on the page outside the open chat window closes it,
+    // matching the behavior visitors expect from most chat widgets. Listening
+    // on mousedown (rather than click) catches the interaction a beat earlier,
+    // before any click handler on the page underneath has a chance to run.
+    useEffect(() => {
+        if (!isChatOpen) return;
+        function handleOutsideClick(event) {
+            if (chatContainerRef.current && !chatContainerRef.current.contains(event.target)) {
+                hideChat();
+            }
+        }
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isChatOpen]);
 
     function dismissBubble() {
         setBubbleClosing(true);
@@ -1029,10 +1046,10 @@ export default function Chatbot() {
             )}
 
             {isChatOpen && (
-                <div id="chat-container">
+                <div id="chat-container" ref={chatContainerRef}>
                     <div id="chat-header">
                         <div className="header-identity">
-                            <div className="header-logo"><RoboticIcon size={24} idSuffix="header" /></div>
+                            <div className="header-logo"><RoboticIcon size={38} idSuffix="header" /></div>
                             <div className="header-copy">
                                 <div className="header-title">Fares</div>
                                 <div className="header-status"><span className="status-dot" /> SDRS Trade Assistant</div>

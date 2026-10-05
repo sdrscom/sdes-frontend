@@ -19,6 +19,7 @@
     "@google/generative-ai": "^0.21.0",
     "axios": "^1.13.2",
     "cors": "^2.8.4",
+    "dompurify": "^3.4.16",
     "dotenv": "^16.4.1",
     "express": "^4.19.2",
     "framer-motion": "^12.23.24",

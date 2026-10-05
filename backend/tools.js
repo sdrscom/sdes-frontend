@@ -29,7 +29,16 @@ export const chatbotTools = [{
 
 export const executeTool = async (name, args) => {
     console.log(`\n[Database Action Triggered] AI called: ${name}`);
-    console.log(`[Parameters Provided]:`, args);
+    // capture_lead's args carry a real visitor's name/email/inquiry. Server
+    // logs (e.g. Vercel function logs) have their own retention and access
+    // surface, separate from whatever the business wants for customer PII —
+    // log a redacted shape for this one call instead of the raw details.
+    // Every other tool's args are logged as-is (e.g. a container ID isn't PII).
+    if (name === 'capture_lead') {
+        console.log('[Parameters Provided]: { name: \'[redacted]\', email: \'[redacted]\', inquiry: [redacted] }');
+    } else {
+        console.log(`[Parameters Provided]:`, args);
+    }
 
     if (name === 'track_container') {
         return {

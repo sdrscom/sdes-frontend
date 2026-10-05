@@ -4,7 +4,7 @@ import { loadKnowledgeBase } from '../knowledgeBase.js';
 import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
-import { validateChatRequest, MAX_MESSAGE_LENGTH } from '../validation.js';
+import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
 import { TimeoutError, withTimeout, isRetryableError, withSingleRetry } from '../reliability.js';
 
 const calls = [];
@@ -198,6 +198,21 @@ assert.equal(validateChatRequest({ message: 'x'.repeat(MAX_MESSAGE_LENGTH + 1) }
 assert.equal(validateChatRequest({ message: 'x'.repeat(MAX_MESSAGE_LENGTH) }).valid, true, 'exactly the limit is still allowed');
 assert.equal(validateChatRequest({ message: 123 }).valid, false, 'non-string message must be rejected, not crash on .trim()');
 assert.equal(validateChatRequest({ message: 'hi', attachmentBase64: 'x'.repeat(7 * 1024 * 1024) }).valid, false, 'oversized attachment payload must be rejected');
+
+// Security regression: an oversized or malformed `history` must be rejected
+// before it ever reaches Gemini, on both /api/chat (via validateChatRequest)
+// and /api/voice-chat (via validateHistoryPayload directly) — otherwise any
+// direct API caller could attach megabytes of text across many turns on
+// every single request and burn the shared Gemini quota.
+assert.equal(validateHistoryPayload(undefined).valid, true, 'history is optional');
+assert.equal(validateHistoryPayload([{ role: 'user', parts: [{ text: 'hi' }] }]).valid, true, 'a normal, small history is allowed');
+assert.equal(validateHistoryPayload('not-an-array').valid, false, 'a non-array history must be rejected');
+assert.equal(
+    validateHistoryPayload([{ role: 'user', parts: [{ text: 'x'.repeat(MAX_HISTORY_JSON_BYTES) }] }]).valid,
+    false,
+    'a history payload over the byte cap must be rejected'
+);
+assert.equal(validateChatRequest({ message: 'hi', history: 'not-an-array' }).valid, false, '/api/chat rejects a malformed history the same way');
 
 // Regression: a very long-running conversation resent its entire history forever
 // with no bound. sanitizeHistoryForGemini must cap it and still start with 'user'.

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { detectVoiceLanguage } from '../utils/voiceLanguage.js';
 import { stripMarkdownForSpeech } from '../utils/ttsText.js';
 import { useLanguage } from '../context/LanguageContext';
@@ -9,6 +10,45 @@ const getBackendUrl = () => {
         ? 'http://localhost:5000' 
         : 'https://sdes-backend.vercel.app';
 };
+
+// Security fix: bot replies are rendered as rich text via `marked`, which —
+// like most markdown parsers — passes any raw HTML in its input straight
+// through by default. Since the reply text ultimately comes from an LLM that
+// could be steered (via a crafted message or an uploaded attachment) into
+// emitting something like `<img src=x onerror=alert(1)>` or a `javascript:`
+// link, the parsed HTML must be sanitized before it's used with
+// dangerouslySetInnerHTML — otherwise that markup would execute with full
+// access to this page's origin. DOMPurify is the well-audited standard tool
+// for exactly this.
+const SANITIZE_ALLOWED_TAGS = [
+    'a', 'p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'code', 'pre',
+    'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'table', 'thead',
+    'tbody', 'tr', 'th', 'td', 'span', 'del', 's'
+];
+
+function sanitizeBotHtml(html) {
+    const clean = DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: SANITIZE_ALLOWED_TAGS,
+        // No attributes are allowed to pass through by default (this is what
+        // strips every `on*` event handler, `style`, `src`, etc.) except
+        // `href`, added back in below with its own protocol restriction.
+        ALLOWED_ATTR: ['href'],
+        ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i
+    });
+    // DOMPurify only sanitizes the markup; it doesn't know this chat widget
+    // wants outbound links to open in a new tab with the usual
+    // noopener/noreferrer safety attributes, so add those back afterward.
+    try {
+        const doc = new DOMParser().parseFromString(clean, 'text/html');
+        doc.body.querySelectorAll('a[href]').forEach((a) => {
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+        });
+        return doc.body.innerHTML;
+    } catch (e) {
+        return clean;
+    }
+}
 
 // The website has a site-wide English/Arabic toggle (LanguageContext). The
 // widget's own UI text (not just the AI's replies) should follow that same
@@ -444,6 +484,7 @@ export default function Chatbot() {
     // just vanishing instantly when React unmounts it.
     const [chatMounted, setChatMounted] = useState(false);
     const [chatEntered, setChatEntered] = useState(false);
+    const chatAnimFrameRef = useRef(null);
     const [isVoiceActive, setIsVoiceActive] = useState(false);
     // Mirrors isVoiceActive for async callbacks (MediaRecorder.onstop, fetch
     // continuations) that were created from an earlier render. Reading the state
@@ -589,10 +630,21 @@ export default function Chatbot() {
     useEffect(() => {
         if (isChatOpen) {
             setChatMounted(true);
-            const rafId = requestAnimationFrame(() => {
-                requestAnimationFrame(() => setChatEntered(true));
+            // Bug fix: only the outer rAF's id was kept, so if the chat was
+            // closed again within the ~16-32ms before the inner rAF had fired,
+            // cleanup couldn't cancel it — the now-stale `setChatEntered(true)`
+            // would still fire a frame later, briefly flashing the window back
+            // open mid-close. Always track whichever rAF is currently pending
+            // so cleanup can reliably cancel it.
+            chatAnimFrameRef.current = requestAnimationFrame(() => {
+                chatAnimFrameRef.current = requestAnimationFrame(() => {
+                    chatAnimFrameRef.current = null;
+                    setChatEntered(true);
+                });
             });
-            return () => cancelAnimationFrame(rafId);
+            return () => {
+                if (chatAnimFrameRef.current) cancelAnimationFrame(chatAnimFrameRef.current);
+            };
         }
         setChatEntered(false);
         const unmountTimer = setTimeout(() => setChatMounted(false), 320);
@@ -1221,12 +1273,21 @@ export default function Chatbot() {
         if (isVoiceActive) {
             closeVoice();
         }
+        // Bug fix: dictation's recognizer uses `continuous: true` and
+        // auto-restarts itself from its own onend handler, so once started it
+        // never actually stops on its own — not even if the chat window is
+        // closed. Without this, the mic kept listening (and silently writing
+        // into the input box) in the background indefinitely, and reopening
+        // the widget later showed it still "Listening for speech…" even
+        // though the mic was never clicked in that session.
+        stopDictation();
     }
 
     function clearConversation() {
         if (isVoiceActive) {
             closeVoice();
         }
+        stopDictation();
         setMessages([{ role: 'bot', text: t.greeting, time: t.justNow }]);
         conversationHistoryRef.current = [];
         voiceHistoryRef.current = [];
@@ -1390,7 +1451,7 @@ export default function Chatbot() {
                                 {m.role === 'bot' ? (
                                     <div className="message-row">
                                         <div className="msg-avatar"><RoboticIcon size={22} idSuffix={`msg${idx}`} /></div>
-                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: marked.parse(m.text) }} />
+                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: sanitizeBotHtml(marked.parse(m.text)) }} />
                                     </div>
                                 ) : (
                                     <div className="message" dir="auto">{m.text}</div>
@@ -1455,7 +1516,7 @@ export default function Chatbot() {
                         <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title={t.voiceTitle} onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title={t.micTitle} onClick={startSpeechToText}>
+                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title={t.micTitle} onClick={isDictating ? stopDictation : startSpeechToText}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                         </button>
                         <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>

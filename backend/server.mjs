@@ -7,7 +7,7 @@ import { loadKnowledgeBase } from './knowledgeBase.js';
 import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
-import { validateChatRequest } from './validation.js';
+import { validateChatRequest, validateHistoryPayload } from './validation.js';
 import { withTimeout, withSingleRetry } from './reliability.js';
 
 dotenv.config();
@@ -186,6 +186,14 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
             return res.status(400).json({
                 reply: 'That recording is too large to process. Please try a shorter message.',
                 transcript: '(Audio rejected: too large)'
+            });
+        }
+
+        const historyCheck = validateHistoryPayload(history);
+        if (!historyCheck.valid) {
+            return res.status(historyCheck.status).json({
+                reply: historyCheck.error,
+                transcript: ''
             });
         }
 

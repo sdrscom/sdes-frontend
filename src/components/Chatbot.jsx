@@ -540,6 +540,12 @@ export default function Chatbot() {
     const silenceDetectorRef = useRef(null);
     const speechRecognitionRef = useRef(null);
     const recorderTimerRef = useRef(null);
+    // How most voice-dictation UIs behave (Google voice search, WhatsApp, Siri,
+    // etc.): the mic doesn't listen forever just because it was clicked once —
+    // it auto-stops after the speaker goes quiet for a few seconds. Tracks the
+    // pending "give up and stop" timeout, reset every time new speech comes in.
+    const dictationSilenceTimerRef = useRef(null);
+    const inputAreaRef = useRef(null);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -587,7 +593,22 @@ export default function Chatbot() {
             const wrappers = container.querySelectorAll('.message-wrapper:not(.typing-wrapper)');
             const lastEl = wrappers[wrappers.length - 1];
             if (lastEl) {
-                container.scrollTo({ top: Math.max(0, lastEl.offsetTop - 10), behavior: 'smooth' });
+                // Bug fix: `.offsetTop` is relative to the nearest *positioned*
+                // ancestor, not necessarily this scroll container — #messages
+                // itself has no `position` set, so offsetTop was actually
+                // measured against the chat window's fixed-position root
+                // (header and all), producing a value far larger than this
+                // container's real scrollable height. The browser clamps an
+                // out-of-range scrollTop to its max, which is why this always
+                // ended up scrolled to the very bottom instead of the top of
+                // the new reply. Measuring both rects against the viewport and
+                // taking the difference is correct regardless of what
+                // positioning context sits above this container.
+                const target = lastEl.getBoundingClientRect().top
+                    - container.getBoundingClientRect().top
+                    + container.scrollTop
+                    - 10;
+                container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
                 return;
             }
         }
@@ -700,6 +721,24 @@ export default function Chatbot() {
         return () => document.removeEventListener('mousedown', handleOutsideClick);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isChatOpen]);
+
+    // Dictation shouldn't keep listening forever just because it was started
+    // once — clicking anywhere other than the composer (the message input,
+    // attach/voice/mic/send buttons) means the visitor has moved on to doing
+    // something else, e.g. reading earlier messages, tapping a quick-reply
+    // pill, or clicking outside the chat entirely. Combined with the silence
+    // timeout above, this matches how dictation behaves in most chat/voice UIs.
+    useEffect(() => {
+        if (!isDictating) return;
+        function handleClickAwayFromComposer(event) {
+            if (inputAreaRef.current && !inputAreaRef.current.contains(event.target)) {
+                stopDictation();
+            }
+        }
+        document.addEventListener('mousedown', handleClickAwayFromComposer);
+        return () => document.removeEventListener('mousedown', handleClickAwayFromComposer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDictating]);
 
     function dismissBubble() {
         setBubbleClosing(true);
@@ -1115,10 +1154,27 @@ export default function Chatbot() {
 
     function stopDictation() {
         dictationActiveRef.current = false;
+        if (dictationSilenceTimerRef.current) {
+            clearTimeout(dictationSilenceTimerRef.current);
+            dictationSilenceTimerRef.current = null;
+        }
         if (speechRecognitionRef.current) {
             try { speechRecognitionRef.current.stop(); } catch (e) {}
         }
         setIsDictating(false);
+    }
+
+    // Restarts the "stop listening after a few seconds of silence" countdown.
+    // Called both when dictation starts (so saying nothing at all still times
+    // out) and on every speech result (so actively talking — including normal
+    // pauses between sentences — keeps resetting the clock instead of cutting
+    // the user off mid-thought).
+    const DICTATION_SILENCE_TIMEOUT_MS = 5000;
+    function armDictationSilenceTimer() {
+        if (dictationSilenceTimerRef.current) clearTimeout(dictationSilenceTimerRef.current);
+        dictationSilenceTimerRef.current = setTimeout(() => {
+            stopDictation();
+        }, DICTATION_SILENCE_TIMEOUT_MS);
     }
 
     function startSpeechToText() {
@@ -1150,8 +1206,10 @@ export default function Chatbot() {
             setVisualizerState('listening');
             speechBufferRef.current = '';
             dictationBaseRef.current = input || '';
+            armDictationSilenceTimer();
         };
         recog.onresult = (event) => {
+            armDictationSilenceTimer();
             let interim = '';
             // collect final results into buffer and show interim separately
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -1213,6 +1271,10 @@ export default function Chatbot() {
                 return;
             }
             if (isCurrentSession) {
+                if (dictationSilenceTimerRef.current) {
+                    clearTimeout(dictationSilenceTimerRef.current);
+                    dictationSilenceTimerRef.current = null;
+                }
                 setIsDictating(false);
                 setVisualizerState('connecting');
                 // ensure input is focused after dictation ends
@@ -1485,7 +1547,7 @@ export default function Chatbot() {
                         </div>
                     )}
 
-                    <div id="input-area">
+                    <div id="input-area" ref={inputAreaRef}>
                         <input type="file" ref={fileInputRef} accept="image/*,application/pdf,text/plain" style={{ display: 'none' }} onChange={handleAttachmentSelect} />
                         <button className="icon-btn" title={t.attachTitle} onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>

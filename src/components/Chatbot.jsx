@@ -112,7 +112,15 @@ function RoboticIcon({ size = 28, idSuffix = 'a' }) {
     const eyeGrad = `botEye-${idSuffix}`;
     const antennaGrad = `botAntenna-${idSuffix}`;
     return (
-        <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        /* The artwork below (antenna through chin/bolts) only occupies
+           roughly x:[5.3,42.7] y:[0.8,40] of a 0-48 box — in particular there
+           is a large unused strip from y=40 to y=48 that nothing ever draws
+           into, while the top edge has almost no margin at all. Rendered at
+           any size, that lopsided gap showed up as a big, bottom-heavy band
+           of empty white space inside the icon's badge. This tightened,
+           evenly-padded viewBox crops that dead space out so the badge's
+           background shows through only as a thin, even border. */
+        <svg width={size} height={size} viewBox="2.4 -1.2 43.2 43.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <defs>
                 <linearGradient id={headGrad} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stopColor="#5366e0" />
@@ -256,6 +264,12 @@ const css = `
 .message-wrapper { display: flex; flex-direction: column; max-width: 84%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
+/* Small round avatar next to each bot reply, similar to common live-chat
+   widgets (e.g. Tawk.to), so replies read as coming from "Fares" rather than
+   an anonymous bubble. */
+.message-row { display: flex; align-items: flex-end; gap: 8px; min-width: 0; }
+.msg-avatar { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; background: #eef1fb; display: flex; align-items: center; justify-content: center; }
+.message-row .message { flex: 1 1 auto; min-width: 0; }
 .message { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
 .user .message { background: #2d3b76; color: white; border-bottom-right-radius: 4px; }
 .bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); }
@@ -264,6 +278,9 @@ const css = `
 .message a { color: #b82227; }
 .user .message a { color: #fff; }
 .timestamp { font-size: 11px; color: #7b8499; margin-top: 5px; padding: 0 2px; }
+/* Keeps the timestamp lined up under the message bubble's text rather than
+   under the avatar circle now sitting to its left. */
+.message-wrapper.bot .timestamp { padding-left: 34px; }
 #input-area {
     display: flex; align-items: flex-end; gap: 4px; padding: 10px 12px 12px;
     background: #fff; border-top: 1px solid rgba(45, 59, 118, 0.1); flex: 0 0 auto;
@@ -304,10 +321,13 @@ const css = `
 
 .quick-pills { display: flex; gap: 8px; padding: 10px 12px 0; flex-wrap: wrap; background: #fff; }
 .pill {
-    background: #fff; border: 1px solid rgba(45, 59, 118, 0.16); color: #2d3b76;
-    padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer;
+    /* Solid brand-colored outline + solid brand-colored text (like Tawk.to's
+       quick-reply chips), instead of the previous faint, barely-visible border. */
+    background: #fff; border: 1.5px solid #2d3b76; color: #2d3b76;
+    padding: 8px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
 }
-.pill:hover { background: rgba(45, 59, 118, 0.06); border-color: #2d3b76; }
+.pill:hover { background: rgba(45, 59, 118, 0.08); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(45, 59, 118, 0.14); }
 .header-title, .header-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 @media (max-width: 520px) {
@@ -452,6 +472,7 @@ export default function Chatbot() {
     // visit doesn't re-show it on every single page load.
     const [showGreetingBubble, setShowGreetingBubble] = useState(false);
     const [bubbleClosing, setBubbleClosing] = useState(false);
+    const audioContextRef = useRef(null);
     const chatContainerRef = useRef(null);
 
     const messagesRef = useRef(null);
@@ -501,9 +522,44 @@ export default function Chatbot() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // A new bot reply used to always snap the scroll position to the very
+    // bottom of the panel — fine for short replies, but a long answer then
+    // opened showing only its last line, forcing the visitor to scroll back
+    // up just to read it from the start. Scroll new bot replies so their TOP
+    // is in view instead; a new user message (which is always short, just
+    // typed) still scrolls to the bottom as before, so the composer and the
+    // upcoming typing indicator stay visible.
+    const prevMessagesLenRef = useRef(messages.length);
     useEffect(() => {
-        if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+        const container = messagesRef.current;
+        if (!container) return;
+        const prevLen = prevMessagesLenRef.current;
+        prevMessagesLenRef.current = messages.length;
+
+        if (messages.length <= prevLen || messages.length === 0) {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+            return;
+        }
+
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage.role === 'bot') {
+            const wrappers = container.querySelectorAll('.message-wrapper:not(.typing-wrapper)');
+            const lastEl = wrappers[wrappers.length - 1];
+            if (lastEl) {
+                container.scrollTo({ top: Math.max(0, lastEl.offsetTop - 10), behavior: 'smooth' });
+                return;
+            }
+        }
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
     }, [messages]);
+
+    // The typing indicator isn't part of `messages`, so it needs its own nudge
+    // to scroll into view the moment it appears.
+    useEffect(() => {
+        if (!isThinking) return;
+        const container = messagesRef.current;
+        if (container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }, [isThinking]);
 
     // Bug fix: the greeting text was set once, in the useState initializer
     // above, from whatever language was active the moment the widget first
@@ -563,6 +619,7 @@ export default function Chatbot() {
         const showTimer = setTimeout(() => {
             setShowGreetingBubble(true);
             try { sessionStorage.setItem('sdrs_chat_bubble_shown', '1'); } catch (e) {}
+            playLandingChime();
         }, 2500);
 
         return () => clearTimeout(showTimer);
@@ -607,6 +664,84 @@ export default function Chatbot() {
 
     function appendMessage(text, role) {
         setMessages(prev => [...prev, { role, text, time: new Date().toLocaleTimeString() }]);
+    }
+
+    // --- Tiny UI sound cues (landing chime, thinking blip, reply ding) ---
+    // Synthesized with the Web Audio API instead of shipping audio files, so
+    // there's nothing to host/license — just a couple of short, soft sine-wave
+    // tones. getAudioContext() is lazy (creating one before any user gesture
+    // is harmless; it just starts "suspended" on some browsers).
+    function getAudioContext() {
+        if (!audioContextRef.current) {
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx) return null;
+                audioContextRef.current = new Ctx();
+            } catch (e) {
+                return null;
+            }
+        }
+        return audioContextRef.current;
+    }
+
+    function playTone(ctx, freq, startTime, duration, peakGain) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, startTime);
+        gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.03);
+    }
+
+    // Browsers block audio with sound until the visitor has interacted with
+    // the page at least once — expected for the very first landing chime,
+    // which fires on a timer with no click involved. Rather than let it
+    // silently fail forever, queue it to play on the visitor's first
+    // click/tap/keypress anywhere on the page instead.
+    function playChime(renderTones) {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const fire = () => {
+            try { renderTones(ctx); } catch (e) { /* audio is non-critical */ }
+        };
+        if (ctx.state === 'suspended') {
+            const resumeAndFire = () => {
+                ctx.resume().then(fire).catch(() => {});
+                document.removeEventListener('pointerdown', resumeAndFire);
+                document.removeEventListener('keydown', resumeAndFire);
+            };
+            document.addEventListener('pointerdown', resumeAndFire, { once: true });
+            document.addEventListener('keydown', resumeAndFire, { once: true });
+            return;
+        }
+        fire();
+    }
+
+    function playLandingChime() {
+        playChime((ctx) => {
+            const now = ctx.currentTime;
+            playTone(ctx, 880, now, 0.18, 0.07);
+            playTone(ctx, 1318.5, now + 0.1, 0.22, 0.06);
+        });
+    }
+
+    function playThinkingBlip() {
+        playChime((ctx) => {
+            playTone(ctx, 600, ctx.currentTime, 0.07, 0.035);
+        });
+    }
+
+    function playReplyChime() {
+        playChime((ctx) => {
+            const now = ctx.currentTime;
+            playTone(ctx, 1046.5, now, 0.1, 0.05);
+            playTone(ctx, 1568, now + 0.07, 0.16, 0.045);
+        });
     }
 
     function triggerFileUpload() {
@@ -1135,10 +1270,24 @@ export default function Chatbot() {
         setInput('');
         setSelectedAttachment(null);
         setIsThinking(true);
+        playThinkingBlip();
 
         // Snapshot before this turn. Only committed to conversationHistoryRef once
         // we know the exchange actually succeeded.
         const history = conversationHistoryRef.current;
+        // Even when Gemini answers almost instantly, popping the reply in
+        // immediately feels jarring/robotic. Keep the typing indicator up for
+        // at least this long so a reply always arrives with a brief, natural
+        // "thinking" beat — only the remaining time is waited, so slower
+        // replies aren't delayed any further than they already are.
+        const MIN_THINKING_MS = 700;
+        const thinkingStartedAt = Date.now();
+        async function waitForMinThinkingTime() {
+            const elapsed = Date.now() - thinkingStartedAt;
+            if (elapsed < MIN_THINKING_MS) {
+                await new Promise(resolve => setTimeout(resolve, MIN_THINKING_MS - elapsed));
+            }
+        }
 
         try {
             const response = await fetch(`${backendUrl}/api/chat`, {
@@ -1157,6 +1306,7 @@ export default function Chatbot() {
             });
 
             const botReply = await response.text();
+            await waitForMinThinkingTime();
             if (!response.ok) {
                 console.error('Chat API error', response.status, botReply);
                 // 400/413/429/504 responses now carry a specific, already
@@ -1173,6 +1323,7 @@ export default function Chatbot() {
 
             if (botReply) {
                 appendMessage(botReply, 'bot');
+                playReplyChime();
                 conversationHistoryRef.current = [
                     ...history,
                     { role: 'user', parts: [{ text: finalMessage }] },
@@ -1183,6 +1334,7 @@ export default function Chatbot() {
             }
         } catch (error) {
             console.error('Chat request failed', error);
+            await waitForMinThinkingTime();
             appendMessage(t.reachFailed, 'bot');
         } finally {
             setIsThinking(false);
@@ -1235,18 +1387,26 @@ export default function Chatbot() {
                     <div id="messages" ref={messagesRef}>
                         {messages.map((m, idx) => (
                             <div key={idx} className={`message-wrapper ${m.role}`}>
-                                <div className="message" dir="auto" dangerouslySetInnerHTML={m.role === 'bot' ? { __html: marked.parse(m.text) } : undefined}>
-                                    {m.role !== 'bot' ? m.text : null}
-                                </div>
+                                {m.role === 'bot' ? (
+                                    <div className="message-row">
+                                        <div className="msg-avatar"><RoboticIcon size={22} idSuffix={`msg${idx}`} /></div>
+                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: marked.parse(m.text) }} />
+                                    </div>
+                                ) : (
+                                    <div className="message" dir="auto">{m.text}</div>
+                                )}
                                 <div className="timestamp">{m.time}</div>
                             </div>
                         ))}
                         {isThinking && (
-                            <div className="message-wrapper bot">
-                                <div className="message typing-indicator" aria-live="polite">
-                                    <span className="typing-dot" />
-                                    <span className="typing-dot" />
-                                    <span className="typing-dot" />
+                            <div className="message-wrapper bot typing-wrapper">
+                                <div className="message-row">
+                                    <div className="msg-avatar"><RoboticIcon size={22} idSuffix="msgTyping" /></div>
+                                    <div className="message typing-indicator" aria-live="polite">
+                                        <span className="typing-dot" />
+                                        <span className="typing-dot" />
+                                        <span className="typing-dot" />
+                                    </div>
                                 </div>
                                 <div className="timestamp">{t.thinkingLabel}</div>
                             </div>

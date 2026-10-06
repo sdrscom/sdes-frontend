@@ -1075,6 +1075,12 @@ export default function Chatbot() {
             mr.onstop = async () => {
                 if (!isVoiceActiveRef.current) return;
                 setVisualizerState('processing');
+                // Audio has to go: upload -> Gemini listens/thinks/replies ->
+                // download, before anything can be heard — a real gap with no
+                // feedback at all, which is exactly what made this feel stuck
+                // to the user. A short tone the instant recording stops gives
+                // an immediate "heard you, working on it" cue to fill it.
+                playThinkingBlip();
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 // allow smaller blobs to be processed to avoid endless listening loops
                 try { clearTimeout(recorderTimerRef.current); recorderTimerRef.current = null; } catch (e) {}
@@ -1131,10 +1137,13 @@ export default function Chatbot() {
             });
             const data = await response.json();
 
-            if (data.transcript && data.transcript !== '...') appendMessage(data.transcript, 'user');
-
+            // Live voice mode is meant to be speaking-only at both ends — the
+            // transcript/reply used to also get appended as text bubbles in
+            // the chat log underneath, which looked like a transcription
+            // feature mid-call rather than a voice conversation. Still track
+            // both in voiceHistoryRef (not shown anywhere) so follow-up
+            // questions in the same voice session keep their context.
             if (data.reply) {
-                appendMessage(data.reply, 'bot');
                 if (data.transcript && data.transcript !== '...') {
                     voiceHistoryRef.current = [
                         ...voiceHistoryRef.current,

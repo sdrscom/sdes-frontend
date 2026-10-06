@@ -205,7 +205,15 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
             systemInstruction: systemInstruction,
             generationConfig: {
                 responseMimeType: 'application/json',
-                thinkingConfig: { thinkingBudget: 0 }
+                thinkingConfig: { thinkingBudget: 0 },
+                // The prompt below already asks for "2 to 4 short sentences",
+                // but nothing previously stopped the model from occasionally
+                // generating a much longer reply anyway — and every extra
+                // token directly adds to how long the caller sits waiting
+                // before anything can be spoken back. 300 tokens comfortably
+                // covers a few conversational sentences while capping the
+                // worst case.
+                maxOutputTokens: 300
             }
         });
 

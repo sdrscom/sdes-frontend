@@ -207,7 +207,12 @@ const css = `
        viewport instead; browsers that don't support dvh simply ignore this
        line and keep the vh-based height above. */
     height: min(640px, calc(100dvh - 104px));
-    background: #ffffff;
+    /* The header and footer (#chat-header, .quick-pills, #input-area) each
+       paint their own solid background below, so leaving this transparent
+       is what lets the messages area's glass panel actually show the page
+       behind the widget through its blur, instead of just blurring an
+       opaque white backdrop into more opaque white. */
+    background: transparent;
     border-radius: 20px;
     box-shadow: 0 22px 50px rgba(26, 35, 71, 0.22), 0 2px 8px rgba(26, 35, 71, 0.08);
     display: flex;
@@ -297,10 +302,24 @@ const css = `
 }
 #messages {
     flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
-    background: #f4f6fb;
+    /* Glassmorphism: a translucent, saturated blur of whatever page content
+       sits behind the floating widget, instead of the previous flat
+       #f4f6fb fill. Only this scrollable conversation area gets the glass
+       treatment — the header above and the quick-pills/input row below it
+       keep their original solid backgrounds. */
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.58) 0%, rgba(228, 234, 250, 0.4) 100%);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+/* Older browsers without backdrop-filter support would otherwise show an
+   overly transparent, hard-to-read panel with nothing actually blurred
+   behind it — fall back to the original flat background for those. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #messages { background: #f4f6fb; }
 }
 #messages::-webkit-scrollbar { width: 8px; }
-#messages::-webkit-scrollbar-thumb { background: rgba(45, 59, 118, 0.25); border-radius: 99px; }
+#messages::-webkit-scrollbar-thumb { background: rgba(45, 59, 118, 0.3); border-radius: 99px; }
 .message-wrapper { display: flex; flex-direction: column; max-width: 84%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
@@ -312,7 +331,18 @@ const css = `
 .message-row .message { flex: 1 1 auto; min-width: 0; }
 .message { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
 .user .message { background: #2d3b76; color: white; border-bottom-right-radius: 4px; }
-.bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); }
+/* A light frosted-card treatment on bot bubbles echoes the glass panel
+   behind them, while staying high-opacity enough (0.84) that dark text on
+   top keeps full contrast/readability regardless of what's blurred behind. */
+.bot .message {
+    background: rgba(255, 255, 255, 0.84);
+    color: #1a2347;
+    border-bottom-left-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    box-shadow: 0 4px 14px rgba(26, 35, 71, 0.08);
+}
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
 .message ul, .message ol { margin: 6px 0 0; padding-left: 18px; }
 .message a { color: #b82227; }

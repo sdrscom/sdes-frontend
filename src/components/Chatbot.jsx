@@ -147,7 +147,7 @@ const CHATBOT_TEXT = {
 // rather than a flat line icon, matching the brand's navy/red palette.
 // idSuffix keeps gradient ids unique whenever more than one instance could ever
 // render in the DOM at once (launcher + header + greeting bubble).
-function RoboticIcon({ size = 28, idSuffix = 'a' }) {
+function RoboticIcon({ size = 28, idSuffix = 'a', animate = false }) {
     const headGrad = `botHead-${idSuffix}`;
     const eyeGrad = `botEye-${idSuffix}`;
     const antennaGrad = `botAntenna-${idSuffix}`;
@@ -160,7 +160,7 @@ function RoboticIcon({ size = 28, idSuffix = 'a' }) {
            of empty white space inside the icon's badge. This tightened,
            evenly-padded viewBox crops that dead space out so the badge's
            background shows through only as a thin, even border. */
-        <svg width={size} height={size} viewBox="2.4 -1.2 43.2 43.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg className={animate ? 'robotic-icon robotic-icon-live' : 'robotic-icon'} width={size} height={size} viewBox="2.4 -1.2 43.2 43.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" overflow="visible">
             <defs>
                 <linearGradient id={headGrad} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stopColor="#5366e0" />
@@ -178,21 +178,27 @@ function RoboticIcon({ size = 28, idSuffix = 'a' }) {
                 </linearGradient>
             </defs>
 
-            <line x1="24" y1="4" x2="24" y2="11" stroke="#9aa3c7" strokeWidth="2" strokeLinecap="round" />
-            <circle cx="24" cy="4" r="3.2" fill={`url(#${antennaGrad})`} />
+            <g className="robot-antenna">
+                <circle className="antenna-ring antenna-ring-1" cx="24" cy="4" r="5.4" fill="none" stroke="#b82227" strokeWidth="1.2" />
+                <circle className="antenna-ring antenna-ring-2" cx="24" cy="4" r="5.4" fill="none" stroke="#ff8f8f" strokeWidth="1.1" />
+                <line x1="24" y1="4" x2="24" y2="11" stroke="#9aa3c7" strokeWidth="2" strokeLinecap="round" />
+                <circle className="antenna-tip" cx="24" cy="4" r="3.2" fill={`url(#${antennaGrad})`} />
+            </g>
 
-            <rect x="6.5" y="10" width="35" height="30" rx="12" fill={`url(#${headGrad})`} />
-            <path d="M11 15c4.5-4.5 11-5.6 17.5-4.3 5.5 1.1 9.8 3.4 12 6.6-3.4-2.3-9.8-4.3-16.3-4.3-6.4 0-10.8 1.1-13.2 2z" fill="rgba(255,255,255,0.22)" />
+            <g className="robot-body">
+                <rect x="6.5" y="10" width="35" height="30" rx="12" fill={`url(#${headGrad})`} />
+                <path d="M11 15c4.5-4.5 11-5.6 17.5-4.3 5.5 1.1 9.8 3.4 12 6.6-3.4-2.3-9.8-4.3-16.3-4.3-6.4 0-10.8 1.1-13.2 2z" fill="rgba(255,255,255,0.22)" />
 
-            <circle cx="17.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
-            <circle cx="30.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
-            <circle cx="16" cy="23.8" r="1.3" fill="#fff" />
-            <circle cx="29" cy="23.8" r="1.3" fill="#fff" />
+                <circle cx="17.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+                <circle cx="30.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+                <circle cx="16" cy="23.8" r="1.3" fill="#fff" />
+                <circle cx="29" cy="23.8" r="1.3" fill="#fff" />
 
-            <rect x="16.5" y="33.5" width="15" height="3" rx="1.5" fill="rgba(255,255,255,0.32)" />
+                <rect x="16.5" y="33.5" width="15" height="3" rx="1.5" fill="rgba(255,255,255,0.32)" />
 
-            <circle cx="7" cy="25" r="1.7" fill="#aab3d6" />
-            <circle cx="41" cy="25" r="1.7" fill="#aab3d6" />
+                <circle cx="7" cy="25" r="1.7" fill="#aab3d6" />
+                <circle cx="41" cy="25" r="1.7" fill="#aab3d6" />
+            </g>
         </svg>
     );
 }
@@ -246,15 +252,16 @@ const css = `
     border-bottom: 3px solid #b82227;
     flex: 0 0 auto;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     isolation: isolate;
 }
 /* Decorative trade-route grid behind the header copy. Pure CSS so it
-   stays light on mobile — a faint isometric grid, drifting teal nodes,
-   and a couple of shipping-arc lines. pointer-events:none so it never
-   steals taps from the close/clear buttons sitting on top. */
+   stays light on mobile — a faint isometric grid and a couple of
+   shipping-arc lines. pointer-events:none so it never steals taps
+   from the close/clear buttons sitting on top. */
 .header-anim {
     position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    border-radius: inherit;
 }
 .header-anim-grid {
     position: absolute; inset: -40% -20% -10%;
@@ -277,16 +284,6 @@ const css = `
         radial-gradient(90% 70% at 92% 112%, transparent 56%, rgba(61, 220, 151, 0.18) 57%, transparent 58%);
     animation: headerArcPulse 7s ease-in-out infinite;
 }
-.header-anim-nodes span {
-    position: absolute; width: 5px; height: 5px; border-radius: 50%;
-    background: #6fd6ff; box-shadow: 0 0 0 3px rgba(111, 214, 255, 0.18), 0 0 10px rgba(111, 214, 255, 0.7);
-    animation: headerNodePulse 3.4s ease-in-out infinite;
-}
-.header-anim-nodes span:nth-child(1) { left: 18%; top: 62%; animation-delay: 0s; }
-.header-anim-nodes span:nth-child(2) { left: 38%; top: 42%; animation-delay: 0.5s; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18), 0 0 10px rgba(61, 220, 151, 0.65); }
-.header-anim-nodes span:nth-child(3) { left: 57%; top: 70%; animation-delay: 1.1s; }
-.header-anim-nodes span:nth-child(4) { left: 74%; top: 38%; animation-delay: 1.7s; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18), 0 0 10px rgba(61, 220, 151, 0.65); }
-.header-anim-nodes span:nth-child(5) { left: 88%; top: 58%; animation-delay: 2.2s; }
 .header-identity, .header-actions { position: relative; z-index: 1; }
 @keyframes headerGridDrift {
     from { background-position: 0 0, 0 0; }
@@ -296,12 +293,8 @@ const css = `
     0%, 100% { opacity: 0.55; transform: translateY(0); }
     50% { opacity: 1; transform: translateY(-3px); }
 }
-@keyframes headerNodePulse {
-    0%, 100% { transform: scale(0.85); opacity: 0.55; }
-    50% { transform: scale(1.25); opacity: 1; }
-}
 @media (prefers-reduced-motion: reduce) {
-    .header-anim-grid, .header-anim-arcs, .header-anim-nodes span { animation: none; }
+    .header-anim-grid, .header-anim-arcs { animation: none; }
 }
 .header-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .header-logo {
@@ -310,6 +303,48 @@ const css = `
     width: 40px; height: 40px; background: #fff; border-radius: 12px; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     color: #2d3b76; font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
+    overflow: visible;
+    /* The antenna ping rings extend a few px past the 40x40 badge. The
+       header itself uses overflow:hidden to clip the grid animation, so
+       this extra stacking context plus a little breathing room on the
+       SVG keeps the rings visible without leaking the grid. */
+    z-index: 2;
+}
+/* One-shot "coming online" turn when the chat window opens, plus a
+   looping antenna ping that stays on for as long as the window is open.
+   Both live on the header instance only (.robotic-icon-live). */
+.header-logo.activate .robotic-icon-live {
+    transform-origin: 50% 58%;
+    animation: robotActivate 0.72s cubic-bezier(0.34, 1.35, 0.64, 1) 1;
+}
+.robotic-icon-live .antenna-ring {
+    transform-origin: 24px 4px;
+    opacity: 0;
+}
+.robotic-icon-live .antenna-ring-1 { animation: antennaPing 1.8s ease-out infinite; }
+.robotic-icon-live .antenna-ring-2 { animation: antennaPing 1.8s ease-out 0.9s infinite; }
+.robotic-icon-live .antenna-tip {
+    transform-origin: 24px 4px;
+    animation: antennaTipGlow 1.8s ease-in-out infinite;
+}
+@keyframes robotActivate {
+    0% { transform: rotate(-18deg) translateX(-8px) scale(0.9); }
+    58% { transform: rotate(8deg) translateX(3px) scale(1.05); }
+    100% { transform: rotate(0deg) translateX(0) scale(1); }
+}
+@keyframes antennaPing {
+    0% { transform: scale(0.7); opacity: 0.72; }
+    100% { transform: scale(1.85); opacity: 0; }
+}
+@keyframes antennaTipGlow {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(184, 34, 39, 0)); }
+    50% { filter: drop-shadow(0 0 3px rgba(184, 34, 39, 0.85)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .header-logo.activate .robotic-icon-live,
+    .robotic-icon-live .antenna-ring-1,
+    .robotic-icon-live .antenna-ring-2,
+    .robotic-icon-live .antenna-tip { animation: none; }
 }
 .header-copy { min-width: 0; }
 /* The online status dot belongs next to the assistant's name ("Fares"),
@@ -411,11 +446,17 @@ const css = `
     width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 10px 14px;
     font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
     resize: none; overflow-y: auto; min-height: 42px; max-height: 120px; font-family: inherit;
+    /* Hide the native inner scrollbar (the grey "pipe" on the right of
+       the composer). The box itself still grows up to max-height, and
+       once it hits that cap the user can still scroll with the wheel
+       or by dragging inside the field — just without a visible bar. */
+    scrollbar-width: none;
     /* No transition here on purpose — growing while actively typing needs
        to feel instant, not animated (see autoResizeMessageInput()'s comment).
        A transition is applied inline, only for the brief moment the
        composer settles back down after sending/clearing. */
 }
+#message-input::-webkit-scrollbar { display: none; }
 #message-input:focus { border-color: #2d3b76; background: #fff; box-shadow: 0 0 0 3px rgba(45, 59, 118, 0.12); }
 .icon-btn.mic-active { background: rgba(184, 34, 39, 0.1); color: #b82227; }
 .icon-btn.voice-active { background: rgba(45, 59, 118, 0.12); color: #2d3b76; }
@@ -1641,12 +1682,9 @@ export default function Chatbot() {
                         <div className="header-anim" aria-hidden="true">
                             <div className="header-anim-grid" />
                             <div className="header-anim-arcs" />
-                            <div className="header-anim-nodes">
-                                <span /><span /><span /><span /><span />
-                            </div>
                         </div>
                         <div className="header-identity">
-                            <div className="header-logo"><RoboticIcon size={40} idSuffix="header" /></div>
+                            <div className={`header-logo${chatEntered ? ' activate' : ''}`}><RoboticIcon size={40} idSuffix="header" animate /></div>
                             <div className="header-copy">
                                 <div className="header-title"><span className="status-dot" />{t.headerTitle}</div>
                                 <div className="header-status">{t.headerStatus}</div>

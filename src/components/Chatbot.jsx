@@ -1377,65 +1377,69 @@ export default function Chatbot() {
         stopDictation();
         closeVoice();
 
+        // Phones (especially Chrome on Android) ignore `continuous: true`
+        // and instead deliver cumulative snapshots — each result is the
+        // whole sentence so far, not a new segment. Joining those, then
+        // auto-restarting when the utterance ends, is what produced
+        // "hello hello hello I hello I see yours how are you doing".
+        const isTouchDictation = window.matchMedia('(pointer: coarse)').matches || 'ontouchend' in window;
+
         const recog = new SpeechRecognition();
-        // Match the site's current language instead of forcing English, so
-        // Arabic-speaking visitors get accurate dictation instead of the browser
-        // trying (and failing) to transcribe Arabic speech as English.
         recog.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
-        // Regression fix: this was `false`, so the browser ended the entire
-        // recognition session as soon as it detected a short pause between
-        // phrases — after writing "a few words" the user had to click the mic
-        // button again to keep dictating. `true` lets one session span multiple
-        // phrases/pauses.
-        recog.continuous = true;
+        recog.continuous = !isTouchDictation;
         recog.interimResults = true;
+        recog.maxAlternatives = 1;
         dictationActiveRef.current = true;
         dictationFatalErrorRef.current = false;
+
+        function spokenFromEvent(event) {
+            const pieces = [];
+            for (let i = 0; i < event.results.length; i++) {
+                const text = (event.results[i][0] && event.results[i][0].transcript)
+                    ? event.results[i][0].transcript.trim()
+                    : '';
+                if (text) pieces.push({ text, isFinal: !!event.results[i].isFinal });
+            }
+            if (pieces.length === 0) return { spoken: '', isFinal: false };
+
+            const laterContainsEarlier = pieces.some((p, i) =>
+                i > 0 && pieces.slice(0, i).some((prev) =>
+                    p.text.toLowerCase().startsWith(prev.text.toLowerCase())
+                )
+            );
+            if (laterContainsEarlier || isTouchDictation) {
+                let best = pieces[0];
+                for (const p of pieces) {
+                    if (p.text.length >= best.text.length) best = p;
+                }
+                return { spoken: best.text, isFinal: best.isFinal };
+            }
+
+            const finals = pieces.filter((p) => p.isFinal).map((p) => p.text).join(' ');
+            const live = pieces.filter((p) => !p.isFinal).map((p) => p.text).join(' ');
+            return { spoken: [finals, live].filter(Boolean).join(' '), isFinal: live.length === 0 && finals.length > 0 };
+        }
+
         recog.onstart = () => {
             setIsDictating(true);
             setVisualizerState('listening');
             armDictationSilenceTimer();
-            // Chrome ends and restarts a "continuous" session after short
-            // pauses. If we snapshot `input` from this closure (stale) or
-            // wipe the buffer on every onstart, already-transcribed words
-            // either vanish or get counted twice. Fold whatever this
-            // session already finalized into the base, then let the new
-            // session's results start clean.
-            if (speechBufferRef.current) {
-                dictationBaseRef.current = [dictationBaseRef.current, speechBufferRef.current].filter(Boolean).join(' ');
-                speechBufferRef.current = '';
-            }
         };
         recog.onresult = (event) => {
             armDictationSilenceTimer();
-            // Rebuild from the full results list every time — do not append.
-            // Chrome often re-delivers earlier final segments (resultIndex 0)
-            // and also repeats those words inside the current interim, which
-            // is what turned "Hello SDRS how are you doing" into
-            // "hello hello hello I hello I see ...".
-            let finals = '';
-            let interim = '';
-            for (let i = 0; i < event.results.length; i++) {
-                const piece = (event.results[i][0] && event.results[i][0].transcript) ? event.results[i][0].transcript : '';
-                if (event.results[i].isFinal) {
-                    finals = finals ? `${finals} ${piece}` : piece;
-                } else {
-                    interim = interim ? `${interim} ${piece}` : piece;
-                }
-            }
-            const finalized = finals.trim();
-            let live = interim.trim();
-            if (finalized && live.toLowerCase().startsWith(finalized.toLowerCase())) {
-                live = live.slice(finalized.length).trim();
-            }
-            speechBufferRef.current = finalized;
-            const composed = [dictationBaseRef.current, finalized, live].filter(Boolean).join(' ');
+            const { spoken, isFinal } = spokenFromEvent(event);
+            speechBufferRef.current = spoken;
+            const composed = [dictationBaseRef.current, spoken].filter(Boolean).join(' ');
             setInput(composed);
             try { autoResizeMessageInput(); } catch (e) {}
+            // One-utterance-and-done on phones, same as WhatsApp/Gboard:
+            // the OS already ended the phrase, and restarting would repeat it.
+            if (isTouchDictation && isFinal && spoken) {
+                dictationActiveRef.current = false;
+                try { recog.stop(); } catch (e) {}
+            }
         };
         recog.onerror = (event) => {
-            // A brief 'no-speech' gap is normal and should not end dictation — only
-            // permission/hardware errors are truly fatal and should stop it for good.
             const fatalErrors = ['not-allowed', 'audio-capture', 'service-not-allowed'];
             if (fatalErrors.includes(event?.error)) {
                 dictationFatalErrorRef.current = true;
@@ -1446,40 +1450,37 @@ export default function Chatbot() {
                     appendMessage(t.noMic, 'bot');
                 }
             }
-            // The browser fires onend right after onerror; let onend decide whether
-            // to resume or fully stop, based on the flags set above.
         };
         recog.onend = () => {
-            // Guard against a superseded session: if the mic button was clicked
-            // again in the meantime, speechRecognitionRef.current now points at a
-            // newer recog instance, and this stale onend must not touch it.
             const isCurrentSession = speechRecognitionRef.current === recog;
-            if (isCurrentSession && dictationActiveRef.current && !dictationFatalErrorRef.current) {
-                // A short delay avoids a Chrome race where calling start() again
-                // synchronously inside a recognizer's own onend can throw
-                // "recognition has already started".
+            if (!isCurrentSession) return;
+
+            const canRestart = dictationActiveRef.current && !dictationFatalErrorRef.current && !isTouchDictation;
+            if (canRestart) {
+                if (speechBufferRef.current) {
+                    dictationBaseRef.current = [dictationBaseRef.current, speechBufferRef.current].filter(Boolean).join(' ');
+                    speechBufferRef.current = '';
+                }
                 setTimeout(() => {
                     const stillCurrent = speechRecognitionRef.current === recog;
                     if (!stillCurrent || !dictationActiveRef.current || dictationFatalErrorRef.current) return;
                     try {
                         recog.start();
                     } catch (e) {
-                        setIsDictating(false);
-                        setVisualizerState('connecting');
+                        stopDictation();
                     }
                 }, 150);
                 return;
             }
-            if (isCurrentSession) {
-                if (dictationSilenceTimerRef.current) {
-                    clearTimeout(dictationSilenceTimerRef.current);
-                    dictationSilenceTimerRef.current = null;
-                }
-                setIsDictating(false);
-                setVisualizerState('connecting');
-                // ensure input is focused after dictation ends
-                try { messageInputRef.current?.focus(); } catch (e) {}
+
+            if (dictationSilenceTimerRef.current) {
+                clearTimeout(dictationSilenceTimerRef.current);
+                dictationSilenceTimerRef.current = null;
             }
+            dictationActiveRef.current = false;
+            setIsDictating(false);
+            setVisualizerState('connecting');
+            try { messageInputRef.current?.focus(); } catch (e) {}
         };
 
         speechRecognitionRef.current = recog;

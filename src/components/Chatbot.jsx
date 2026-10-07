@@ -60,7 +60,7 @@ const CHATBOT_TEXT = {
         headerTitle: 'Fares',
         toggleLabel: 'Chat with Fares',
         toggleTitle: 'Chat with Fares',
-        headerStatus: 'SDRS Trade Assistant',
+        headerStatus: 'Your Assistant',
         clearTitle: 'Clear conversation',
         closeTitle: 'Close chat',
         quickPills: ['About SDRS', 'Services', 'Investment', 'Contact Us'],
@@ -81,7 +81,6 @@ const CHATBOT_TEXT = {
         bubbleDismiss: 'Dismiss',
         removeAttachment: 'Remove attachment',
         thinkingLabel: 'Thinking…',
-        justNow: 'Just now',
         fileTooLarge: (kb, mb) => `That file is too large (${kb} KB). Please attach something under ${mb} MB.`,
         unsupportedFileType: (type) => `That file type (${type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`,
         speechToTextUnavailable: 'Speech-to-text is not available in this browser.',
@@ -102,7 +101,7 @@ const CHATBOT_TEXT = {
         headerTitle: 'فارس',
         toggleLabel: 'تحدث مع فارس',
         toggleTitle: 'تحدث مع فارس',
-        headerStatus: 'مساعد التجارة في SDRS',
+        headerStatus: 'مساعدك الشخصي',
         clearTitle: 'مسح المحادثة',
         closeTitle: 'إغلاق المحادثة',
         quickPills: ['عن SDRS', 'الخدمات', 'الاستثمار', 'اتصل بنا'],
@@ -123,7 +122,6 @@ const CHATBOT_TEXT = {
         bubbleDismiss: 'إغلاق',
         removeAttachment: 'إزالة المرفق',
         thinkingLabel: 'يُفكر…',
-        justNow: 'الآن',
         fileTooLarge: (kb, mb) => `هذا الملف كبير جدًا (${kb} كيلوبايت). يرجى إرفاق ملف أصغر من ${mb} ميجابايت.`,
         unsupportedFileType: (type) => `نوع هذا الملف (${type || 'غير معروف'}) غير مدعوم حاليًا. يرجى إرفاق صورة أو ملف PDF أو ملف نصي.`,
         speechToTextUnavailable: 'تحويل الصوت إلى نص غير متوفر في هذا المتصفح.',
@@ -477,7 +475,13 @@ export default function Chatbot() {
     const t = CHATBOT_TEXT[language] || CHATBOT_TEXT.en;
 
     const [messages, setMessages] = useState([
-        { role: 'bot', text: t.greeting, time: t.justNow }
+        // Every other message gets a real wall-clock timestamp via
+        // appendMessage() — this one used to be hardcoded to the static
+        // "Just now" label instead, so it never matched the format of
+        // anything sent afterward (and stayed stuck saying "Just now" no
+        // matter how long the conversation went on). Use the same real
+        // timestamp here too, for consistency.
+        { role: 'bot', text: t.greeting, time: new Date().toLocaleTimeString() }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -638,7 +642,7 @@ export default function Chatbot() {
     useEffect(() => {
         setMessages(prev => {
             if (prev.length === 1 && prev[0].role === 'bot') {
-                return [{ ...prev[0], text: t.greeting, time: t.justNow }];
+                return [{ ...prev[0], text: t.greeting, time: new Date().toLocaleTimeString() }];
             }
             return prev;
         });
@@ -1367,7 +1371,7 @@ export default function Chatbot() {
             closeVoice();
         }
         stopDictation();
-        setMessages([{ role: 'bot', text: t.greeting, time: t.justNow }]);
+        setMessages([{ role: 'bot', text: t.greeting, time: new Date().toLocaleTimeString() }]);
         conversationHistoryRef.current = [];
         voiceHistoryRef.current = [];
         setSelectedAttachment(null);

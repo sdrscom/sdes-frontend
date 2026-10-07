@@ -61,6 +61,7 @@ const CHATBOT_TEXT = {
         toggleLabel: 'Chat with Fares',
         toggleTitle: 'Chat with Fares',
         headerStatus: 'Your Assistant',
+        justNow: 'Just now',
         clearTitle: 'Clear conversation',
         closeTitle: 'Close chat',
         quickPills: ['About SDRS', 'Services', 'Investment', 'Contact Us'],
@@ -102,6 +103,7 @@ const CHATBOT_TEXT = {
         toggleLabel: 'تحدث مع فارس',
         toggleTitle: 'تحدث مع فارس',
         headerStatus: 'مساعدك الشخصي',
+        justNow: 'الآن',
         clearTitle: 'مسح المحادثة',
         closeTitle: 'إغلاق المحادثة',
         quickPills: ['عن SDRS', 'الخدمات', 'الاستثمار', 'اتصل بنا'],
@@ -243,6 +245,63 @@ const css = `
     gap: 12px;
     border-bottom: 3px solid #b82227;
     flex: 0 0 auto;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+/* Decorative trade-route grid behind the header copy. Pure CSS so it
+   stays light on mobile — a faint isometric grid, drifting teal nodes,
+   and a couple of shipping-arc lines. pointer-events:none so it never
+   steals taps from the close/clear buttons sitting on top. */
+.header-anim {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+}
+.header-anim-grid {
+    position: absolute; inset: -40% -20% -10%;
+    background-image:
+        linear-gradient(rgba(110, 214, 255, 0.13) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(110, 214, 255, 0.13) 1px, transparent 1px);
+    background-size: 22px 22px;
+    transform: perspective(280px) rotateX(58deg) scale(1.35);
+    transform-origin: center 80%;
+    animation: headerGridDrift 18s linear infinite;
+    opacity: 0.7;
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 28%, #000 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 28%, #000 100%);
+}
+.header-anim-arcs {
+    position: absolute; left: -8%; right: -8%; bottom: -18%; height: 92%;
+    background:
+        radial-gradient(120% 80% at 12% 108%, transparent 54%, rgba(61, 220, 151, 0.22) 55%, transparent 56%),
+        radial-gradient(110% 78% at 58% 118%, transparent 52%, rgba(110, 214, 255, 0.28) 53%, transparent 54.5%),
+        radial-gradient(90% 70% at 92% 112%, transparent 56%, rgba(61, 220, 151, 0.18) 57%, transparent 58%);
+    animation: headerArcPulse 7s ease-in-out infinite;
+}
+.header-anim-nodes span {
+    position: absolute; width: 5px; height: 5px; border-radius: 50%;
+    background: #6fd6ff; box-shadow: 0 0 0 3px rgba(111, 214, 255, 0.18), 0 0 10px rgba(111, 214, 255, 0.7);
+    animation: headerNodePulse 3.4s ease-in-out infinite;
+}
+.header-anim-nodes span:nth-child(1) { left: 18%; top: 62%; animation-delay: 0s; }
+.header-anim-nodes span:nth-child(2) { left: 38%; top: 42%; animation-delay: 0.5s; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18), 0 0 10px rgba(61, 220, 151, 0.65); }
+.header-anim-nodes span:nth-child(3) { left: 57%; top: 70%; animation-delay: 1.1s; }
+.header-anim-nodes span:nth-child(4) { left: 74%; top: 38%; animation-delay: 1.7s; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18), 0 0 10px rgba(61, 220, 151, 0.65); }
+.header-anim-nodes span:nth-child(5) { left: 88%; top: 58%; animation-delay: 2.2s; }
+.header-identity, .header-actions { position: relative; z-index: 1; }
+@keyframes headerGridDrift {
+    from { background-position: 0 0, 0 0; }
+    to { background-position: 0 22px, 22px 0; }
+}
+@keyframes headerArcPulse {
+    0%, 100% { opacity: 0.55; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-3px); }
+}
+@keyframes headerNodePulse {
+    0%, 100% { transform: scale(0.85); opacity: 0.55; }
+    50% { transform: scale(1.25); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .header-anim-grid, .header-anim-arcs, .header-anim-nodes span { animation: none; }
 }
 .header-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .header-logo {
@@ -253,9 +312,19 @@ const css = `
     color: #2d3b76; font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
 }
 .header-copy { min-width: 0; }
-.header-title { font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0.01em; }
-.header-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.78); }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18); }
+/* The online status dot belongs next to the assistant's name ("Fares"),
+   not the subtitle underneath it — moved here from .header-status. The
+   extra 1px left padding (offset by the matching negative margin, so the
+   text itself doesn't actually shift right) gives the dot's glow ring just
+   enough room that .header-title's own overflow:hidden further down
+   doesn't clip its left edge. */
+.header-title {
+    font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 7px;
+    padding-left: 4px; margin-left: -4px;
+}
+.header-status { margin-top: 3px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.78); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18); flex: 0 0 auto; }
 .chat-close-btn, .chat-clear-btn {
     background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: white;
     cursor: pointer; width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
@@ -315,7 +384,15 @@ const css = `
 .message ul, .message ol { margin: 6px 0 0; padding-left: 18px; }
 .message a { color: #b82227; }
 .user .message a { color: #fff; }
-.timestamp { font-size: 11px; color: #7b8499; margin-top: 5px; padding: 0 2px; }
+.timestamp { font-size: 11px; color: #7b8499; margin-top: 5px; padding: 0 2px; display: flex; align-items: center; gap: 2px; }
+/* WhatsApp-style sent/delivered ticks, shown only on the user's own
+   messages. A single grey tick = sent, still waiting on a reply; the
+   second tick fades in and both turn the brand teal once delivered
+   (the assistant has replied). The second svg overlaps the first by a
+   few px, matching the familiar overlapping double-checkmark look. */
+.msg-ticks { display: inline-flex; color: #9aa3bd; transition: color 0.2s ease; }
+.msg-ticks.delivered { color: #3ddc97; }
+.msg-ticks svg:nth-child(2) { margin-left: -7px; }
 /* Keeps the timestamp lined up under the message bubble's text rather than
    under the avatar circle now sitting to its left. */
 .message-wrapper.bot .timestamp { padding-left: 34px; }
@@ -334,9 +411,10 @@ const css = `
     width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 10px 14px;
     font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
     resize: none; overflow-y: auto; min-height: 42px; max-height: 120px; font-family: inherit;
-    /* Grows/shrinks smoothly as you type instead of snapping to the new
-       height instantly, which otherwise reads as a jarring size jump. */
-    transition: height 0.12s ease;
+    /* No transition here on purpose — growing while actively typing needs
+       to feel instant, not animated (see autoResizeMessageInput()'s comment).
+       A transition is applied inline, only for the brief moment the
+       composer settles back down after sending/clearing. */
 }
 #message-input:focus { border-color: #2d3b76; background: #fff; box-shadow: 0 0 0 3px rgba(45, 59, 118, 0.12); }
 .icon-btn.mic-active { background: rgba(184, 34, 39, 0.1); color: #b82227; }
@@ -475,13 +553,11 @@ export default function Chatbot() {
     const t = CHATBOT_TEXT[language] || CHATBOT_TEXT.en;
 
     const [messages, setMessages] = useState([
-        // Every other message gets a real wall-clock timestamp via
-        // appendMessage() — this one used to be hardcoded to the static
-        // "Just now" label instead, so it never matched the format of
-        // anything sent afterward (and stayed stuck saying "Just now" no
-        // matter how long the conversation went on). Use the same real
-        // timestamp here too, for consistency.
-        { role: 'bot', text: t.greeting, time: new Date().toLocaleTimeString() }
+        // `time` is stored as a raw epoch ms number, not a pre-formatted
+        // string — formatMessageTime() below turns a fresh timestamp into
+        // "Just now" and an older one into an actual clock time, the same
+        // way most chat apps (WhatsApp, Slack, Messenger) label messages.
+        { role: 'bot', text: t.greeting, time: Date.now() }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -520,6 +596,10 @@ export default function Chatbot() {
     // visit doesn't re-show it on every single page load.
     const [showGreetingBubble, setShowGreetingBubble] = useState(false);
     const [bubbleClosing, setBubbleClosing] = useState(false);
+    // Purely a re-render trigger (its value is never read) so each message's
+    // "Just now" label flips over to its real timestamp on its own, a few
+    // seconds after it stops being brand-new — see formatMessageTime().
+    const [, setNowTick] = useState(0);
     const audioContextRef = useRef(null);
     const chatContainerRef = useRef(null);
 
@@ -642,7 +722,7 @@ export default function Chatbot() {
     useEffect(() => {
         setMessages(prev => {
             if (prev.length === 1 && prev[0].role === 'bot') {
-                return [{ ...prev[0], text: t.greeting, time: new Date().toLocaleTimeString() }];
+                return [{ ...prev[0], text: t.greeting, time: Date.now() }];
             }
             return prev;
         });
@@ -688,17 +768,38 @@ export default function Chatbot() {
     // have CSS clip it back down to 120px, a wasted reflow that showed up as a
     // visible "jump"/flicker in the composer's height while typing a longer
     // message instead of a smooth, single resize up to the cap.
-    function autoResizeMessageInput() {
+    // While actively typing, the box should feel instant and solid — most
+    // good chat composers (Intercom, Crisp, LiveChat) grow with no visible
+    // animation lag as each character lands, since animating every single
+    // keystroke makes the box feel like it's "chasing" the cursor instead of
+    // keeping up with it. The one place a smooth animation actually helps is
+    // the opposite direction: settling back down to a single line right
+    // after sending/clearing, so that doesn't feel like an abrupt snap.
+    // `animate` is only passed true from those two call sites.
+    function autoResizeMessageInput(animate = false) {
         const el = messageInputRef.current;
         if (!el) return;
+        el.style.transition = animate ? 'height 0.16s ease' : 'none';
         el.style.height = 'auto';
         el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+        if (animate) {
+            setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
+        }
     }
 
     useEffect(() => {
         window.addEventListener('resize', autoResizeMessageInput);
         return () => window.removeEventListener('resize', autoResizeMessageInput);
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Ticks a few times a minute so any message still showing "Just now"
+    // gets re-evaluated and flips to its real timestamp once it crosses the
+    // JUST_NOW_WINDOW_MS threshold, without needing any other state change
+    // to happen to trigger that re-render.
+    useEffect(() => {
+        const tickInterval = setInterval(() => setNowTick(n => n + 1), 5000);
+        return () => clearInterval(tickInterval);
     }, []);
 
     useEffect(() => {
@@ -772,7 +873,19 @@ export default function Chatbot() {
     }
 
     function appendMessage(text, role) {
-        setMessages(prev => [...prev, { role, text, time: new Date().toLocaleTimeString() }]);
+        setMessages(prev => [...prev, { role, text, time: Date.now() }]);
+    }
+
+    // How most chat apps label message times: a brand-new message reads
+    // "Just now" rather than an exact clock time, then settles into a real
+    // timestamp once it's not brand-new anymore. `nowTick` below exists
+    // purely to force a re-render every few seconds so a message actually
+    // flips over from "Just now" to its real time on its own, instead of
+    // only updating the next time something else causes a re-render.
+    const JUST_NOW_WINDOW_MS = 15000;
+    function formatMessageTime(timestamp) {
+        if (typeof timestamp !== 'number') return timestamp;
+        return (Date.now() - timestamp) < JUST_NOW_WINDOW_MS ? t.justNow : new Date(timestamp).toLocaleTimeString();
     }
 
     // --- Tiny UI sound cues (landing chime, thinking blip, reply ding) ---
@@ -1371,7 +1484,7 @@ export default function Chatbot() {
             closeVoice();
         }
         stopDictation();
-        setMessages([{ role: 'bot', text: t.greeting, time: new Date().toLocaleTimeString() }]);
+        setMessages([{ role: 'bot', text: t.greeting, time: Date.now() }]);
         conversationHistoryRef.current = [];
         voiceHistoryRef.current = [];
         setSelectedAttachment(null);
@@ -1380,8 +1493,9 @@ export default function Chatbot() {
         // the textarea's own inline height, which the auto-grow handlers set
         // directly on the DOM node. Without this, clearing a long, wrapped
         // draft left the composer stuck at whatever tall height it had grown
-        // to, now empty, until the next keystroke recalculated it.
-        try { autoResizeMessageInput(); } catch (e) {}
+        // to, now empty, until the next keystroke recalculated it. Animate
+        // this one, since it's the "settle back down" case, not typing.
+        try { autoResizeMessageInput(true); } catch (e) {}
     }
 
     async function handleSendMessage(messageOverride = null) {
@@ -1422,8 +1536,9 @@ export default function Chatbot() {
         // alone leaves a multi-line draft's grown textarea height in place,
         // so the now-empty composer stays tall until something else happens
         // to resize it (e.g. the next keystroke) instead of collapsing back
-        // down to a single line right away, like it should on send.
-        try { autoResizeMessageInput(); } catch (e) {}
+        // down to a single line right away, like it should on send. Animate
+        // this one too, same "settle back down" case.
+        try { autoResizeMessageInput(true); } catch (e) {}
         setSelectedAttachment(null);
         setIsThinking(true);
         playThinkingBlip();
@@ -1436,7 +1551,7 @@ export default function Chatbot() {
         // at least this long so a reply always arrives with a brief, natural
         // "thinking" beat — only the remaining time is waited, so slower
         // replies aren't delayed any further than they already are.
-        const MIN_THINKING_MS = 700;
+        const MIN_THINKING_MS = 1000;
         const thinkingStartedAt = Date.now();
         async function waitForMinThinkingTime() {
             const elapsed = Date.now() - thinkingStartedAt;
@@ -1523,11 +1638,18 @@ export default function Chatbot() {
             {chatMounted && (
                 <div id="chat-container" className={chatEntered ? 'chat-open' : ''} ref={chatContainerRef}>
                     <div id="chat-header">
+                        <div className="header-anim" aria-hidden="true">
+                            <div className="header-anim-grid" />
+                            <div className="header-anim-arcs" />
+                            <div className="header-anim-nodes">
+                                <span /><span /><span /><span /><span />
+                            </div>
+                        </div>
                         <div className="header-identity">
                             <div className="header-logo"><RoboticIcon size={40} idSuffix="header" /></div>
                             <div className="header-copy">
-                                <div className="header-title">{t.headerTitle}</div>
-                                <div className="header-status"><span className="status-dot" /> {t.headerStatus}</div>
+                                <div className="header-title"><span className="status-dot" />{t.headerTitle}</div>
+                                <div className="header-status">{t.headerStatus}</div>
                             </div>
                         </div>
                         <div className="header-actions">
@@ -1551,7 +1673,23 @@ export default function Chatbot() {
                                 ) : (
                                     <div className="message" dir="auto">{m.text}</div>
                                 )}
-                                <div className="timestamp">{m.time}</div>
+                                <div className="timestamp">
+                                    {formatMessageTime(m.time)}
+                                    {m.role === 'user' && (
+                                        // WhatsApp-style sent/delivered ticks on the user's own messages
+                                        // only, same as WhatsApp/Messenger/Telegram: a single tick means
+                                        // "sent, still waiting on a reply"; a second, coloured tick means
+                                        // "delivered" — here, that the assistant has replied to it. Purely
+                                        // derived from whether a later message exists, no extra state to
+                                        // keep in sync.
+                                        <span className={`msg-ticks ${idx < messages.length - 1 ? 'delivered' : ''}`} aria-hidden="true">
+                                            <svg width="13" height="10" viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L11 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            {idx < messages.length - 1 && (
+                                                <svg width="13" height="10" viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L11 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            )}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         ))}
                         {isThinking && (

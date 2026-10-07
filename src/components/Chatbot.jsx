@@ -207,12 +207,7 @@ const css = `
        viewport instead; browsers that don't support dvh simply ignore this
        line and keep the vh-based height above. */
     height: min(640px, calc(100dvh - 104px));
-    /* The header and footer (#chat-header, .quick-pills, #input-area) each
-       paint their own solid background below, so leaving this transparent
-       is what lets the messages area's glass panel actually show the page
-       behind the widget through its blur, instead of just blurring an
-       opaque white backdrop into more opaque white. */
-    background: transparent;
+    background: #ffffff;
     border-radius: 20px;
     box-shadow: 0 22px 50px rgba(26, 35, 71, 0.22), 0 2px 8px rgba(26, 35, 71, 0.08);
     display: flex;
@@ -302,24 +297,10 @@ const css = `
 }
 #messages {
     flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
-    /* Glassmorphism: a translucent, saturated blur of whatever page content
-       sits behind the floating widget, instead of the previous flat
-       #f4f6fb fill. Only this scrollable conversation area gets the glass
-       treatment — the header above and the quick-pills/input row below it
-       keep their original solid backgrounds. */
-    background: linear-gradient(165deg, rgba(255, 255, 255, 0.58) 0%, rgba(228, 234, 250, 0.4) 100%);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-/* Older browsers without backdrop-filter support would otherwise show an
-   overly transparent, hard-to-read panel with nothing actually blurred
-   behind it — fall back to the original flat background for those. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    #messages { background: #f4f6fb; }
+    background: #f4f6fb;
 }
 #messages::-webkit-scrollbar { width: 8px; }
-#messages::-webkit-scrollbar-thumb { background: rgba(45, 59, 118, 0.3); border-radius: 99px; }
+#messages::-webkit-scrollbar-thumb { background: rgba(45, 59, 118, 0.25); border-radius: 99px; }
 .message-wrapper { display: flex; flex-direction: column; max-width: 84%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
@@ -331,18 +312,7 @@ const css = `
 .message-row .message { flex: 1 1 auto; min-width: 0; }
 .message { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
 .user .message { background: #2d3b76; color: white; border-bottom-right-radius: 4px; }
-/* A light frosted-card treatment on bot bubbles echoes the glass panel
-   behind them, while staying high-opacity enough (0.84) that dark text on
-   top keeps full contrast/readability regardless of what's blurred behind. */
-.bot .message {
-    background: rgba(255, 255, 255, 0.84);
-    color: #1a2347;
-    border-bottom-left-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(8px) saturate(140%);
-    -webkit-backdrop-filter: blur(8px) saturate(140%);
-    box-shadow: 0 4px 14px rgba(26, 35, 71, 0.08);
-}
+.bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); }
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
 .message ul, .message ol { margin: 6px 0 0; padding-left: 18px; }
 .message a { color: #b82227; }
@@ -366,6 +336,9 @@ const css = `
     width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 10px 14px;
     font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
     resize: none; overflow-y: auto; min-height: 42px; max-height: 120px; font-family: inherit;
+    /* Grows/shrinks smoothly as you type instead of snapping to the new
+       height instantly, which otherwise reads as a jarring size jump. */
+    transition: height 0.12s ease;
 }
 #message-input:focus { border-color: #2d3b76; background: #fff; box-shadow: 0 0 0 3px rgba(45, 59, 118, 0.12); }
 .icon-btn.mic-active { background: rgba(184, 34, 39, 0.1); color: #b82227; }
@@ -702,15 +675,26 @@ export default function Chatbot() {
         return () => clearTimeout(unmountTimer);
     }, [isChatOpen]);
 
+    // Single source of truth for the composer's auto-grow behaviour. This used
+    // to be duplicated three times (window resize, typing, and dictation) with
+    // slightly different logic in each copy — notably only this one capped the
+    // computed height at 120px to match the #message-input CSS max-height; the
+    // typing and dictation copies set an uncapped height, so every single
+    // keystroke forced the browser to lay out a taller-than-needed box only to
+    // have CSS clip it back down to 120px, a wasted reflow that showed up as a
+    // visible "jump"/flicker in the composer's height while typing a longer
+    // message instead of a smooth, single resize up to the cap.
+    function autoResizeMessageInput() {
+        const el = messageInputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
     useEffect(() => {
-        const fitInput = () => {
-            const el = messageInputRef.current;
-            if (!el) return;
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-        };
-        window.addEventListener('resize', fitInput);
-        return () => window.removeEventListener('resize', fitInput);
+        window.addEventListener('resize', autoResizeMessageInput);
+        return () => window.removeEventListener('resize', autoResizeMessageInput);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -1264,13 +1248,7 @@ export default function Chatbot() {
             const base = dictationBaseRef.current || '';
             const composed = (base + (speechBufferRef.current ? (base ? ' ' : '') + speechBufferRef.current : '') + (interim ? (speechBufferRef.current || base ? ' ' : '') + interim : '')).trim();
             setInput(composed);
-            // auto-resize if textarea exists
-            try {
-                if (messageInputRef.current) {
-                    messageInputRef.current.style.height = 'auto';
-                    messageInputRef.current.style.height = messageInputRef.current.scrollHeight + 'px';
-                }
-            } catch (e) {}
+            try { autoResizeMessageInput(); } catch (e) {}
         };
         recog.onerror = (event) => {
             // A brief 'no-speech' gap is normal and should not end dictation — only
@@ -1394,6 +1372,12 @@ export default function Chatbot() {
         voiceHistoryRef.current = [];
         setSelectedAttachment(null);
         setInput('');
+        // setInput('') only clears the React-tracked value — it doesn't touch
+        // the textarea's own inline height, which the auto-grow handlers set
+        // directly on the DOM node. Without this, clearing a long, wrapped
+        // draft left the composer stuck at whatever tall height it had grown
+        // to, now empty, until the next keystroke recalculated it.
+        try { autoResizeMessageInput(); } catch (e) {}
     }
 
     async function handleSendMessage(messageOverride = null) {
@@ -1430,6 +1414,12 @@ export default function Chatbot() {
 
         appendMessage(finalMessage, 'user');
         setInput('');
+        // Same reasoning as clearConversation(): clearing the React state
+        // alone leaves a multi-line draft's grown textarea height in place,
+        // so the now-empty composer stays tall until something else happens
+        // to resize it (e.g. the next keystroke) instead of collapsing back
+        // down to a single line right away, like it should on send.
+        try { autoResizeMessageInput(); } catch (e) {}
         setSelectedAttachment(null);
         setIsThinking(true);
         playThinkingBlip();
@@ -1600,13 +1590,7 @@ export default function Chatbot() {
                             )}
                             <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
                                 setInput(e.target.value);
-                                try {
-                                    const el = messageInputRef.current;
-                                    if (el) {
-                                        el.style.height = 'auto';
-                                        el.style.height = el.scrollHeight + 'px';
-                                    }
-                                } catch (err) {}
+                                try { autoResizeMessageInput(); } catch (err) {}
                             }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();

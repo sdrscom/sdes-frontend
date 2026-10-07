@@ -160,7 +160,7 @@ function RoboticIcon({ size = 28, idSuffix = 'a', animate = false }) {
            of empty white space inside the icon's badge. This tightened,
            evenly-padded viewBox crops that dead space out so the badge's
            background shows through only as a thin, even border. */
-        <svg className={animate ? 'robotic-icon robotic-icon-live' : 'robotic-icon'} width={size} height={size} viewBox="2.4 -1.2 43.2 43.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" overflow="visible">
+        <svg className={animate ? 'robotic-icon robotic-icon-live' : 'robotic-icon'} width={size} height={size} viewBox="2.4 -5.2 43.2 47.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" overflow="visible">
             <defs>
                 <linearGradient id={headGrad} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stopColor="#5366e0" />
@@ -439,13 +439,13 @@ const css = `
 .icon-btn {
     background: none; border: none; cursor: pointer; color: #5c6784; padding: 0;
     display: flex; align-items: center; justify-content: center; transition: color 0.2s, background 0.2s;
-    border-radius: 10px; width: 36px; height: 40px; flex: 0 0 auto;
+    border-radius: 10px; width: 36px; height: 44px; flex: 0 0 auto;
 }
 .icon-btn:hover { color: #2d3b76; background: rgba(45, 59, 118, 0.08); }
 #message-input {
-    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 10px 14px;
+    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 11px 14px;
     font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
-    resize: none; overflow-y: auto; min-height: 42px; max-height: 120px; font-family: inherit;
+    resize: none; overflow-y: auto; min-height: 44px; height: 44px; max-height: 120px; font-family: inherit;
     /* Hide the native inner scrollbar (the grey "pipe" on the right of
        the composer). The box itself still grows up to max-height, and
        once it hits that cap the user can still scroll with the wheel
@@ -461,7 +461,7 @@ const css = `
 .icon-btn.mic-active { background: rgba(184, 34, 39, 0.1); color: #b82227; }
 .icon-btn.voice-active { background: rgba(45, 59, 118, 0.12); color: #2d3b76; }
 #send-btn {
-    background: #2d3b76; color: white; border: none; border-radius: 12px; width: 40px; height: 40px;
+    background: #2d3b76; color: white; border: none; border-radius: 12px; width: 44px; height: 44px;
     display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto;
 }
 #send-btn:hover { background: #1a2347; }
@@ -789,6 +789,7 @@ export default function Chatbot() {
                 chatAnimFrameRef.current = requestAnimationFrame(() => {
                     chatAnimFrameRef.current = null;
                     setChatEntered(true);
+                    try { autoResizeMessageInput(); } catch (e) {}
                 });
             });
             return () => {
@@ -817,12 +818,20 @@ export default function Chatbot() {
     // the opposite direction: settling back down to a single line right
     // after sending/clearing, so that doesn't feel like an abrupt snap.
     // `animate` is only passed true from those two call sites.
+    const COMPOSER_MIN_HEIGHT = 44;
     function autoResizeMessageInput(animate = false) {
         const el = messageInputRef.current;
         if (!el) return;
         el.style.transition = animate ? 'height 0.16s ease' : 'none';
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+        // Never collapse below the resting single-line height. Setting
+        // height to 'auto' then to a raw scrollHeight (with
+        // box-sizing:border-box on every widget element) made the field
+        // look tall at rest and then snap smaller on the first click /
+        // keystroke, because scrollHeight and the CSS min-height were
+        // measuring different boxes.
+        el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
+        const next = Math.max(COMPOSER_MIN_HEIGHT, Math.min(el.scrollHeight, 120));
+        el.style.height = `${next}px`;
         if (animate) {
             setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
         }
@@ -1385,26 +1394,42 @@ export default function Chatbot() {
         recog.onstart = () => {
             setIsDictating(true);
             setVisualizerState('listening');
-            speechBufferRef.current = '';
-            dictationBaseRef.current = input || '';
             armDictationSilenceTimer();
+            // Chrome ends and restarts a "continuous" session after short
+            // pauses. If we snapshot `input` from this closure (stale) or
+            // wipe the buffer on every onstart, already-transcribed words
+            // either vanish or get counted twice. Fold whatever this
+            // session already finalized into the base, then let the new
+            // session's results start clean.
+            if (speechBufferRef.current) {
+                dictationBaseRef.current = [dictationBaseRef.current, speechBufferRef.current].filter(Boolean).join(' ');
+                speechBufferRef.current = '';
+            }
         };
         recog.onresult = (event) => {
             armDictationSilenceTimer();
+            // Rebuild from the full results list every time — do not append.
+            // Chrome often re-delivers earlier final segments (resultIndex 0)
+            // and also repeats those words inside the current interim, which
+            // is what turned "Hello SDRS how are you doing" into
+            // "hello hello hello I hello I see ...".
+            let finals = '';
             let interim = '';
-            // collect final results into buffer and show interim separately
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const r = event.results[i];
-                const t = (r[0] && r[0].transcript) ? r[0].transcript : '';
-                if (r.isFinal) {
-                    speechBufferRef.current = (speechBufferRef.current ? speechBufferRef.current + ' ' : '') + t;
+            for (let i = 0; i < event.results.length; i++) {
+                const piece = (event.results[i][0] && event.results[i][0].transcript) ? event.results[i][0].transcript : '';
+                if (event.results[i].isFinal) {
+                    finals = finals ? `${finals} ${piece}` : piece;
                 } else {
-                    interim = interim ? interim + ' ' + t : t;
+                    interim = interim ? `${interim} ${piece}` : piece;
                 }
             }
-
-            const base = dictationBaseRef.current || '';
-            const composed = (base + (speechBufferRef.current ? (base ? ' ' : '') + speechBufferRef.current : '') + (interim ? (speechBufferRef.current || base ? ' ' : '') + interim : '')).trim();
+            const finalized = finals.trim();
+            let live = interim.trim();
+            if (finalized && live.toLowerCase().startsWith(finalized.toLowerCase())) {
+                live = live.slice(finalized.length).trim();
+            }
+            speechBufferRef.current = finalized;
+            const composed = [dictationBaseRef.current, finalized, live].filter(Boolean).join(' ');
             setInput(composed);
             try { autoResizeMessageInput(); } catch (e) {}
         };
@@ -1458,6 +1483,8 @@ export default function Chatbot() {
         };
 
         speechRecognitionRef.current = recog;
+        speechBufferRef.current = '';
+        dictationBaseRef.current = messageInputRef.current?.value || '';
         try {
             recog.start();
         } catch (e) {
@@ -1770,6 +1797,8 @@ export default function Chatbot() {
                             )}
                             <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
                                 setInput(e.target.value);
+                                try { autoResizeMessageInput(); } catch (err) {}
+                            }} onFocus={() => {
                                 try { autoResizeMessageInput(); } catch (err) {}
                             }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {

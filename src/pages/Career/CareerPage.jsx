@@ -8,7 +8,9 @@
 // Pattern grid overlay, and the #B82227 → #F27141 brand accent gradient.
 // ----------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import {
   Warehouse,
   Truck,
@@ -25,6 +27,10 @@ import {
   Check,
   CheckCircle2,
   Loader2,
+  Globe2,
+  CalendarDays,
+  X,
+  Upload,
 } from "lucide-react";
 import Pattern from "../../components/Pattern/Pattern";
 import { useLanguage } from "../../context/LanguageContext";
@@ -445,10 +451,222 @@ function JobCard({ job, t, onOpen }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  JOB DETAIL + APPLICATION FORM                                       */
+/*  JOB DETAIL + APPLICATION MODAL                                      */
 /* ------------------------------------------------------------------ */
+
+// Job descriptions are written in Markdown in the CMS. Render them as
+// formatted text, sanitized because the HTML is injected into the page.
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(text || "", { breaks: true }));
+}
+
 function JobDetailView({ job, t, isRTL, onBack, submitted, submitting, submitError, onSubmit }) {
   const Icon = DEPARTMENT_ICONS[job.department] || DEFAULT_DEPT_ICON;
+  const [applyOpen, setApplyOpen] = useState(false);
+  const descriptionHtml = useMemo(() => renderMarkdown(job.description), [job.description]);
+
+  const facts = [
+    { icon: Building2, label: t.detail.labels.department, value: job.department },
+    { icon: MapPin, label: t.detail.labels.location, value: job.countryCity },
+    { icon: Globe2, label: t.detail.labels.workplace, value: job.locationType },
+    { icon: Briefcase, label: t.detail.labels.jobType, value: job.jobType },
+    { icon: BarChart2, label: t.detail.labels.experience, value: job.experienceLevel },
+    { icon: Banknote, label: t.detail.labels.salary, value: job.salaryRange },
+    { icon: CalendarDays, label: t.detail.posted, value: timeAgo(job.publishedAt, t.timeAgo) },
+  ].filter((f) => f.value);
+
+  const applyButton = (
+    <button
+      type="button"
+      onClick={() => setApplyOpen(true)}
+      disabled={submitted}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-default disabled:opacity-70"
+      style={{ background: ACCENT_GRADIENT }}
+    >
+      {submitted ? (
+        <>
+          <CheckCircle2 className="h-4 w-4" />
+          {t.detail.applied}
+        </>
+      ) : (
+        <>
+          {t.detail.applyNow}
+          <ArrowRight className={`h-4 w-4 ${isRTL ? "rotate-180" : ""}`} />
+        </>
+      )}
+    </button>
+  );
+
+  return (
+    <section
+      className="relative min-h-screen overflow-hidden pb-28 pt-32 lg:pb-24"
+      style={{ background: "linear-gradient(to bottom right, #262f61, #2D3B76)" }}
+      dir={isRTL ? "rtl" : "ltr"}
+    >
+      <Pattern />
+
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
+        <button
+          onClick={onBack}
+          className="mb-8 flex items-center gap-1.5 text-sm text-gray-300 transition hover:text-[#F27141]"
+        >
+          <ArrowLeft className={`h-4 w-4 ${isRTL ? "rotate-180" : ""}`} />
+          {t.detail.back}
+        </button>
+
+        {/* Header */}
+        <header className="mb-8">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-gray-200">
+              <Icon className="h-3.5 w-3.5" />
+              {job.department}
+            </span>
+            {job.isFeatured && (
+              <span
+                className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white"
+                style={{ background: ACCENT_GRADIENT }}
+              >
+                {t.card.featured}
+              </span>
+            )}
+          </div>
+          <h1 className="text-3xl font-bold leading-tight text-white sm:text-4xl">{job.title}</h1>
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-300">
+            {job.countryCity && (
+              <span className="flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-[#F27141]" />
+                {job.countryCity}
+              </span>
+            )}
+            {job.jobType && (
+              <span className="flex items-center gap-1.5">
+                <Briefcase className="h-4 w-4 text-[#F27141]" />
+                {job.jobType}
+              </span>
+            )}
+            {job.experienceLevel && (
+              <span className="flex items-center gap-1.5">
+                <BarChart2 className="h-4 w-4 text-[#F27141]" />
+                {job.experienceLevel}
+              </span>
+            )}
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          {/* Main content */}
+          <article className="rounded-3xl border border-white/15 bg-white/[0.06] p-6 sm:p-8">
+            {job.description && (
+              <>
+                <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#F27141]">
+                  {t.detail.aboutRole}
+                </h2>
+                <div className="job-prose" dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
+              </>
+            )}
+
+            {job.requirements.length > 0 && (
+              <div className={job.description ? "mt-8 border-t border-white/10 pt-8" : ""}>
+                <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#F27141]">
+                  {t.detail.requirements}
+                </h2>
+                <ul className="space-y-3">
+                  {job.requirements.map((r, i) => (
+                    <li key={i} className="flex items-start gap-3 text-[15px] leading-relaxed text-gray-200">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F27141]/15">
+                        <Check className="h-3.5 w-3.5 text-[#F27141]" />
+                      </span>
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Apply call-to-action beneath the description; the form opens in a popup */}
+            <div className="mt-8 flex flex-col gap-4 rounded-2xl border border-[#F27141]/30 bg-[#F27141]/[0.06] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div>
+                <p className="text-base font-semibold text-white">{t.detail.applyTitle}</p>
+                {!submitted && <p className="mt-1 text-sm text-gray-400">{t.detail.applyHint}</p>}
+              </div>
+              <div className="sm:w-56 sm:shrink-0">{applyButton}</div>
+            </div>
+          </article>
+
+          {/* Sidebar */}
+          <aside className="rounded-3xl border border-white/15 bg-white/[0.06] p-6 lg:sticky lg:top-28">
+            <h2 className="mb-5 text-sm font-semibold text-white">{t.detail.overview}</h2>
+            <dl className="space-y-4">
+              {facts.map(({ icon: FactIcon, label, value }) => (
+                <div key={label} className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.08]">
+                    <FactIcon className="h-4 w-4 text-[#F27141]" />
+                  </span>
+                  <div className="min-w-0">
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</dt>
+                    <dd className="break-words text-sm font-medium text-white">{value}</dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-6 hidden border-t border-white/10 pt-6 lg:block">
+              {applyButton}
+              {!submitted && <p className="mt-3 text-center text-xs text-gray-400">{t.detail.applyHint}</p>}
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* Mobile: apply bar pinned to the bottom of the screen. Right padding
+          keeps it clear of the chat button, which always sits bottom-right. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[#262f61]/95 py-4 pl-4 pr-24 backdrop-blur lg:hidden">
+        {applyButton}
+      </div>
+
+      {applyOpen && (
+        <ApplyModal
+          job={job}
+          t={t}
+          isRTL={isRTL}
+          onClose={() => setApplyOpen(false)}
+          submitted={submitted}
+          submitting={submitting}
+          submitError={submitError}
+          onSubmit={onSubmit}
+        />
+      )}
+
+      {/* Formatting for the Markdown job description */}
+      <style>{`
+        .job-prose { color: rgb(209 213 219); font-size: 15px; line-height: 1.75; }
+        .job-prose > :first-child { margin-top: 0; }
+        .job-prose h1, .job-prose h2, .job-prose h3, .job-prose h4 { color: #fff; font-weight: 700; line-height: 1.35; }
+        .job-prose h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+        .job-prose h2 { font-size: 1.125rem; margin: 2rem 0 0.75rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); }
+        .job-prose h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; color: #F27141; }
+        .job-prose h4 { font-size: 0.95rem; margin: 1.25rem 0 0.5rem; }
+        .job-prose p { margin: 0 0 1rem; }
+        .job-prose strong { color: #fff; font-weight: 600; }
+        .job-prose a { color: #F27141; text-decoration: underline; }
+        .job-prose ul, .job-prose ol { margin: 0 0 1.25rem; padding-inline-start: 1.25rem; }
+        .job-prose ul { list-style: none; padding-inline-start: 0; }
+        .job-prose ul > li { position: relative; padding-inline-start: 1.25rem; margin: 0.4rem 0; }
+        .job-prose ul > li::before { content: ""; position: absolute; inset-inline-start: 0; top: 0.7em; width: 6px; height: 6px; border-radius: 9999px; background: #F27141; }
+        .job-prose ol { list-style: decimal; }
+        .job-prose ol > li { margin: 0.4rem 0; padding-inline-start: 0.25rem; }
+        .job-prose ol > li::marker { color: #F27141; font-weight: 600; }
+        .job-prose hr { border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 1.5rem 0; }
+        .job-prose blockquote { border-inline-start: 3px solid #F27141; padding-inline-start: 1rem; color: rgb(229 231 235); margin: 0 0 1rem; }
+        .job-prose table { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-size: 14px; }
+        .job-prose th, .job-prose td { border: 1px solid rgba(255,255,255,0.15); padding: 0.5rem 0.75rem; text-align: start; }
+        .job-prose th { color: #fff; background: rgba(255,255,255,0.05); }
+      `}</style>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+function ApplyModal({ job, t, isRTL, onClose, submitted, submitting, submitError, onSubmit }) {
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -458,6 +676,22 @@ function JobDetailView({ job, t, isRTL, onBack, submitted, submitting, submitErr
     resumeFile: null,
     coverNote: "",
   });
+  const firstFieldRef = useRef(null);
+
+  // Lock page scroll, close on Escape, and focus the first field.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    firstFieldRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose, submitting]);
 
   const update = (field) => (e) =>
     setForm((f) => ({
@@ -471,150 +705,124 @@ function JobDetailView({ job, t, isRTL, onBack, submitted, submitting, submitErr
   };
 
   return (
-    <section
-      className="relative min-h-screen overflow-hidden pb-24 pt-32"
-      style={{ background: "linear-gradient(to bottom right, #262f61, #2D3B76)" }}
+    <div
+      // Above the chat widget (z-index 10000) so it can't cover the form.
+      className="fixed inset-0 z-[10050] flex items-end justify-center bg-[#0d1330]/75 backdrop-blur-sm sm:items-center sm:p-6"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
       dir={isRTL ? "rtl" : "ltr"}
     >
-      <Pattern />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="apply-modal-title"
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-white/15 shadow-2xl sm:rounded-3xl"
+        style={{ background: "linear-gradient(to bottom right, #2D3B76, #262f61)" }}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5 sm:px-8">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#F27141]">{t.detail.applyTitle}</p>
+            <h2 id="apply-modal-title" className="mt-1 truncate text-lg font-bold text-white sm:text-xl">
+              {job.title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label={t.detail.close}
+            className="rounded-lg p-2 text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-      <div className="relative mx-auto max-w-3xl px-6">
-        <button
-          onClick={onBack}
-          className="mb-8 flex items-center gap-1.5 text-sm text-gray-300 transition hover:text-[#F27141]"
-        >
-          <ArrowLeft className={`h-4 w-4 ${isRTL ? "rotate-180" : ""}`} />
-          {t.detail.back}
-        </button>
+        {submitted ? (
+          <div className="px-6 py-12 text-center sm:px-8">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#F27141]/15">
+              <CheckCircle2 className="h-7 w-7 text-[#F27141]" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold text-white">{t.detail.success.title}</h3>
+            <p className="mx-auto max-w-sm text-sm leading-relaxed text-gray-300">
+              {t.detail.success.descriptionPrefix} {job.title}. {t.detail.success.descriptionSuffix}
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-8 rounded-lg border border-white/20 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              {t.detail.close}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <div className="grid grid-cols-1 gap-4 overflow-y-auto px-6 py-6 sm:grid-cols-2 sm:px-8">
+              <Field label={t.detail.fields.firstName} required>
+                <input ref={firstFieldRef} required type="text" autoComplete="given-name" value={form.firstName} onChange={update("firstName")} className="career-input" />
+              </Field>
+              <Field label={t.detail.fields.lastName} required>
+                <input required type="text" autoComplete="family-name" value={form.lastName} onChange={update("lastName")} className="career-input" />
+              </Field>
+              <Field label={t.detail.fields.email} required>
+                <input required type="email" autoComplete="email" value={form.email} onChange={update("email")} className="career-input" />
+              </Field>
+              <Field label={t.detail.fields.phone}>
+                <input type="tel" autoComplete="tel" value={form.phone} onChange={update("phone")} className="career-input" />
+              </Field>
+              <Field label={t.detail.fields.portfolio} full>
+                <input type="url" placeholder="https://" value={form.portfolioUrl} onChange={update("portfolioUrl")} className="career-input" />
+              </Field>
+              <Field label={t.detail.fields.resume} full required>
+                <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-white/25 bg-white/[0.04] px-4 py-4 transition hover:border-[#F27141]/60 hover:bg-white/[0.07]">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F27141]/15">
+                    <Upload className="h-5 w-5 text-[#F27141]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-white">
+                      {form.resumeFile ? form.resumeFile.name : t.detail.fields.resume}
+                    </span>
+                    <span className="block text-xs text-gray-400">PDF, DOCX</span>
+                  </span>
+                  <input required type="file" accept=".pdf,.docx" onChange={update("resumeFile")} className="sr-only" />
+                </label>
+              </Field>
+              <Field label={t.detail.fields.coverNote} full>
+                <textarea
+                  rows={4}
+                  placeholder={t.detail.fields.coverNotePlaceholder}
+                  value={form.coverNote}
+                  onChange={update("coverNote")}
+                  className="career-input resize-y"
+                />
+              </Field>
 
-        <div className="rounded-3xl border border-white/15 bg-white/[0.06] p-6 sm:p-8">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-gray-200">
-              <Icon className="h-3.5 w-3.5" />
-              {job.department}
-            </span>
-            {job.isFeatured && (
-              <span
-                className="rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white"
+              {submitError && <p className="text-sm text-amber-400 sm:col-span-2">{submitError}</p>}
+            </div>
+
+            {/* Footer */}
+            <div className="flex flex-col-reverse gap-3 border-t border-white/10 px-6 py-4 sm:flex-row sm:justify-end sm:px-8">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="rounded-lg border border-white/20 px-5 py-2.5 text-sm font-semibold text-gray-200 transition hover:bg-white/10 disabled:opacity-50"
+              >
+                {t.detail.close}
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center justify-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:opacity-60"
                 style={{ background: ACCENT_GRADIENT }}
               >
-                {t.card.featured}
-              </span>
-            )}
-          </div>
-
-          <h1 className="mb-3 text-2xl font-bold text-white sm:text-3xl">{job.title}</h1>
-
-          <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-300">
-            <span className="flex items-center gap-1.5">
-              <MapPin className="h-4 w-4" />
-              {job.countryCity}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Briefcase className="h-4 w-4" />
-              {job.jobType}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <BarChart2 className="h-4 w-4" />
-              {job.experienceLevel}
-            </span>
-            {job.salaryRange && (
-              <span className="flex items-center gap-1.5">
-                <Banknote className="h-4 w-4" />
-                {job.salaryRange}
-              </span>
-            )}
-          </div>
-
-          {job.description && (
-            <div className="mb-6 border-t border-white/10 pt-6">
-              <h2 className="mb-2 text-sm font-semibold text-white">{t.detail.aboutRole}</h2>
-              <p className="text-sm leading-relaxed text-gray-300">{job.description}</p>
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {submitting ? t.detail.submitting : t.detail.submit}
+              </button>
             </div>
-          )}
-
-          {job.requirements.length > 0 && (
-            <div className="mb-8 border-t border-white/10 pt-6">
-              <h2 className="mb-3 text-sm font-semibold text-white">{t.detail.requirements}</h2>
-              <ul className="space-y-2">
-                {job.requirements.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#F27141]" />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="border-t border-white/10 pt-6">
-            {submitted ? (
-              <div className="py-8 text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#F27141]/15">
-                  <CheckCircle2 className="h-6 w-6 text-[#F27141]" />
-                </div>
-                <h3 className="mb-1 text-base font-semibold text-white">{t.detail.success.title}</h3>
-                <p className="mx-auto max-w-sm text-sm text-gray-300">
-                  {t.detail.success.descriptionPrefix} {job.title}. {t.detail.success.descriptionSuffix}
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <h2 className="mb-1 text-sm font-semibold text-white sm:col-span-2">
-                  {t.detail.applyTitle}
-                </h2>
-
-                <Field label={t.detail.fields.firstName}>
-                  <input required type="text" value={form.firstName} onChange={update("firstName")} className="career-input" />
-                </Field>
-                <Field label={t.detail.fields.lastName}>
-                  <input required type="text" value={form.lastName} onChange={update("lastName")} className="career-input" />
-                </Field>
-                <Field label={t.detail.fields.email}>
-                  <input required type="email" value={form.email} onChange={update("email")} className="career-input" />
-                </Field>
-                <Field label={t.detail.fields.phone}>
-                  <input type="tel" value={form.phone} onChange={update("phone")} className="career-input" />
-                </Field>
-                <Field label={t.detail.fields.portfolio} full>
-                  <input type="url" placeholder="https://" value={form.portfolioUrl} onChange={update("portfolioUrl")} className="career-input" />
-                </Field>
-                <Field label={t.detail.fields.resume} full>
-                  <input
-                    required
-                    type="file"
-                    accept=".pdf,.docx"
-                    onChange={update("resumeFile")}
-                    className="career-input file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-gray-200"
-                  />
-                </Field>
-                <Field label={t.detail.fields.coverNote} full>
-                  <textarea
-                    rows={4}
-                    placeholder={t.detail.fields.coverNotePlaceholder}
-                    value={form.coverNote}
-                    onChange={update("coverNote")}
-                    className="career-input"
-                  />
-                </Field>
-
-                {submitError && <p className="text-sm text-amber-400 sm:col-span-2">{submitError}</p>}
-
-                <div className="sm:col-span-2">
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-white transition disabled:opacity-60 sm:w-auto"
-                    style={{ background: ACCENT_GRADIENT }}
-                  >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {submitting ? t.detail.submitting : t.detail.submit}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+          </form>
+        )}
       </div>
 
       {/* Scoped input styling shared by all fields above */}
@@ -635,14 +843,17 @@ function JobDetailView({ job, t, isRTL, onBack, submitted, submitting, submitErr
           box-shadow: 0 0 0 2px rgba(242, 113, 65, 0.4);
         }
       `}</style>
-    </section>
+    </div>
   );
 }
 
-function Field({ label, children, full = false }) {
+function Field({ label, children, full = false, required = false }) {
   return (
     <div className={full ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-xs font-medium text-gray-400">{label}</label>
+      <label className="mb-1.5 block text-xs font-medium text-gray-300">
+        {label}
+        {required && <span className="text-[#F27141]"> *</span>}
+      </label>
       {children}
     </div>
   );

@@ -2,9 +2,11 @@ import { Phone, Mail, MapPin } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
 import logo from "/Footer-logo.png";
+import { useMedia } from "../../cms/useMedia";
 
 export default function Footer() {
   const { language } = useLanguage();
+  const media = useMedia();
   const isRTL = language === "ar";
 
   const currentTranslations = translations[language].footer;
@@ -31,7 +33,7 @@ export default function Footer() {
               }`}
             >
               <img
-                src={logo}
+                src={media("global.footerLogo", logo)}
                 alt="Logo"
                 className="w-[14rem] lg:w-[16rem] min-w-[18rem] h-auto p-3"
               />

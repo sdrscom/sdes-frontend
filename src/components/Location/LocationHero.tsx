@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import Pattern from "../../components/Pattern/Pattern";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
+import { useMedia } from "../../cms/useMedia";
 
 const LocationHero = () => {
-  const API_URL = import.meta.env.VITE_API_URL;
   const { language } = useLanguage();
+  const media = useMedia();
   const isRTL = language === "ar";
 
   const currentTranslations = translations[language].locationHero;
@@ -13,63 +14,9 @@ const LocationHero = () => {
 
   const [heroAnimated, setHeroAnimated] = useState(false);
   const [cardAnimated, setCardAnimated] = useState(false);
-  const [heroImage, setHeroImage] = useState<string>("");
-  const [heroTitle, setHeroTitle] = useState<string>("");
-  const [heroDescription, setHeroDescription] = useState<string>("");
-
-  useEffect(() => {
-    const fetchHeroContent = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/location-text-collections?populate=*&locale=${language}`
-        );
-        const data = await res.json();
-        const content = data?.data?.[0];
-
-        if (content?.LocationHeroTitle) {
-          setHeroTitle(content.LocationHeroTitle);
-        } else {
-          setHeroTitle(currentTranslations.title);
-        }
-
-        if (content?.locationHeroDescription) {
-          setHeroDescription(content.locationHeroDescription);
-        } else {
-          setHeroDescription(currentTranslations.description);
-        }
-      } catch (err) {
-        console.error("Error fetching hero content:", err);
-        setHeroTitle(currentTranslations.title);
-        setHeroDescription(currentTranslations.description);
-      }
-    };
-
-    fetchHeroContent();
-  }, [API_URL, language]);
-
-  useEffect(() => {
-    const fetchHeroImage = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/location-hero?populate=*`);
-        const data = await res.json();
-
-        const imageUrl =
-          data?.data?.locationHero?.url ||
-          data?.data?.locationHero?.formats?.small?.url ||
-          "";
-
-        const fullUrl = imageUrl?.startsWith("http")
-          ? imageUrl
-          : `${API_URL}${imageUrl}`;
-
-        setHeroImage(fullUrl);
-      } catch (error) {
-        console.error("Error loading hero image", error);
-      }
-    };
-
-    fetchHeroImage();
-  }, [API_URL]);
+  const heroImage = media("location.heroImage");
+  const heroTitle = currentTranslations.title;
+  const heroDescription = currentTranslations.description;
 
   useEffect(() => {
     const heroTimer = setTimeout(() => setHeroAnimated(true), 200);

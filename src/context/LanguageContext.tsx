@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import i18n from "i18next";
+import { loadSiteContent } from "../cms/siteContent";
 
 type Language = "en" | "ar";
 
@@ -7,6 +8,8 @@ interface LanguageContextType {
   language: Language;
   toggleLanguage: () => void;
   setLanguage: (lang: Language) => void;
+  /** Bumps when CMS content arrives so consumers re-render with it. */
+  contentVersion: number;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(
@@ -29,6 +32,14 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({
     i18n.changeLanguage(language);
   }, [language]);
 
+  const [contentVersion, setContentVersion] = useState(0);
+
+  useEffect(() => {
+    loadSiteContent().then((changed) => {
+      if (changed) setContentVersion((v) => v + 1);
+    });
+  }, []);
+
   const toggleLanguage = () => {
     setLanguageState((prev) => (prev === "en" ? "ar" : "en"));
   };
@@ -38,7 +49,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    <LanguageContext.Provider value={{ language, toggleLanguage, setLanguage }}>
+    <LanguageContext.Provider
+      value={{ language, toggleLanguage, setLanguage, contentVersion }}
+    >
       {children}
     </LanguageContext.Provider>
   );

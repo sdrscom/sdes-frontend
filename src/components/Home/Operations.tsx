@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { CheckCircle, CreditCard, Zap, Bell } from "lucide-react";
@@ -11,10 +11,9 @@ import creditImage from "../../assets/Streamlined/Credit.jpg";
 import governmentImage from "../../assets/Streamlined/Government.jpg";
 import realTimeImage from "../../assets/Streamlined/RealTime.jpg";
 import paymentImage from "../../assets/Streamlined/Payment.jpg";
+import { useMedia } from "../../cms/useMedia";
 
 gsap.registerPlugin(ScrollTrigger);
-
-const API_URL = import.meta.env.VITE_API_URL;
 
 interface Feature {
   icon: LucideIcon;
@@ -28,6 +27,7 @@ interface Feature {
 export default function StreamlinedOperations() {
   const { t } = useTranslation();
   const { language } = useLanguage();
+  const media = useMedia();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -35,12 +35,13 @@ export default function StreamlinedOperations() {
   const buttonRef = useRef<HTMLDivElement>(null);
   const scrollIndicatorRef = useRef<HTMLDivElement>(null);
 
-  const [descriptions, setDescriptions] = useState<string[]>([]);
+  const points = t("streamlinedOperations.points", { returnObjects: true });
+  const descriptions = Array.isArray(points) ? points.filter(Boolean) : [];
 
   const features: Feature[] = [
     {
       icon: CheckCircle,
-      src: paymentImage,
+      src: media("home.operations.payment", paymentImage),
       caption: t("streamlinedOperations.singlePayment"),
       description: t("streamlinedOperations.singlePayment"),
       tag: t("streamlinedOperations.payment"),
@@ -48,7 +49,7 @@ export default function StreamlinedOperations() {
     },
     {
       icon: CreditCard,
-      src: creditImage,
+      src: media("home.operations.credit", creditImage),
       caption: t("streamlinedOperations.creditFacility"),
       description: t("streamlinedOperations.creditFacility"),
       tag: t("streamlinedOperations.finance"),
@@ -56,7 +57,7 @@ export default function StreamlinedOperations() {
     },
     {
       icon: Zap,
-      src: governmentImage,
+      src: media("home.operations.government", governmentImage),
       caption: t("streamlinedOperations.eGovernment"),
       description: t("streamlinedOperations.eGovernment"),
       tag: t("streamlinedOperations.integration"),
@@ -64,41 +65,13 @@ export default function StreamlinedOperations() {
     },
     {
       icon: Bell,
-      src: realTimeImage,
+      src: media("home.operations.realTime", realTimeImage),
       caption: t("streamlinedOperations.realTime"),
       description: t("streamlinedOperations.realTime"),
       tag: t("streamlinedOperations.tracking"),
       color: "#F27141",
     },
   ];
-
-  // Fetch data
-  useEffect(() => {
-    const fetchText = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/home-text-collections?populate=*`
-        );
-        const data = await res.json();
-
-        const currentLocale =
-          language === "ar" ? data.data[0].localizations[0] : data.data[0];
-
-        const rawText = currentLocale?.StreamlinedOperations || "";
-
-        const list = rawText
-          .split("\n")
-          .map((line: string) => line.trim())
-          .filter((line: string) => line !== "");
-
-        setDescriptions(list);
-      } catch (err) {
-        console.error("Error fetching StreamlinedOperations:", err);
-      }
-    };
-
-    fetchText();
-  }, [language]);
 
   // ---------------- GSAP ANIMATIONS ---------------- //
 

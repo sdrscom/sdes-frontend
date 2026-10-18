@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { detectVoiceLanguage } from '../utils/voiceLanguage.js';
+import { stripMarkdownForSpeech } from '../utils/ttsText.js';
+import { useLanguage } from '../context/LanguageContext';
 
 const getBackendUrl = () => {
     return window.location.hostname === 'localhost' 
@@ -7,51 +11,551 @@ const getBackendUrl = () => {
         : 'https://sdes-backend.vercel.app';
 };
 
-const css = `
-:root {
-        --primary-bg: #f4f6f9; --header-bg: #0033a0; --user-msg-bg: #0033a0;
-        --bot-msg-bg: #ffffff; --border-color: #e2e8f0; --text-main: #1e293b; --text-muted: #64748b;
+// Security fix: bot replies are rendered as rich text via `marked`, which —
+// like most markdown parsers — passes any raw HTML in its input straight
+// through by default. Since the reply text ultimately comes from an LLM that
+// could be steered (via a crafted message or an uploaded attachment) into
+// emitting something like `<img src=x onerror=alert(1)>` or a `javascript:`
+// link, the parsed HTML must be sanitized before it's used with
+// dangerouslySetInnerHTML — otherwise that markup would execute with full
+// access to this page's origin. DOMPurify is the well-audited standard tool
+// for exactly this.
+const SANITIZE_ALLOWED_TAGS = [
+    'a', 'p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'code', 'pre',
+    'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'table', 'thead',
+    'tbody', 'tr', 'th', 'td', 'span', 'del', 's'
+];
+
+function sanitizeBotHtml(html) {
+    const clean = DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: SANITIZE_ALLOWED_TAGS,
+        // No attributes are allowed to pass through by default (this is what
+        // strips every `on*` event handler, `style`, `src`, etc.) except
+        // `href`, added back in below with its own protocol restriction.
+        ALLOWED_ATTR: ['href'],
+        ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i
+    });
+    // DOMPurify only sanitizes the markup; it doesn't know this chat widget
+    // wants outbound links to open in a new tab with the usual
+    // noopener/noreferrer safety attributes, so add those back afterward.
+    try {
+        const doc = new DOMParser().parseFromString(clean, 'text/html');
+        doc.body.querySelectorAll('a[href]').forEach((a) => {
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+        });
+        return doc.body.innerHTML;
+    } catch (e) {
+        return clean;
+    }
 }
-#chat-container { width: 360px; height: 520px; max-height: calc(100vh - 40px); background: rgba(255,255,255,0.44); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; overflow: hidden; position: fixed; bottom: 20px; right: 20px; z-index: 9999; backdrop-filter: blur(22px) saturate(120%); border: 1px solid rgba(255,255,255,0.18); }
-#chat-header { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,0.16); }
-.header-logo { width: 34px; height: 34px; background: white; border-radius: 50%; margin-right: 12px; display: flex; align-items: center; justify-content: center; color: #0033a0; font-size: 11px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(0, 51, 160, 0.12); }
-.chat-close-btn { background: rgba(255,255,255,0.12); border: none; color: white; cursor: pointer; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
-.chat-close-btn:hover { background: rgba(255,255,255,0.24); }
-.chat-toggle-button { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: #fff; border: none; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000; transition: transform 0.2s ease, box-shadow 0.2s ease; }
-.chat-toggle-button:hover { transform: translateY(-2px); box-shadow: 0 24px 48px rgba(0, 0, 0, 0.26); }
-.chat-toggle-button .button-label { position: absolute; right: 70px; bottom: 8px; font-size: 12px; color: #fff; background: rgba(0, 51, 160, 0.95); padding: 6px 10px; border-radius: 999px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18); }
-#messages { flex: 1; padding: 12px 18px 18px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: transparent; }
-.message-wrapper { display: flex; flex-direction: column; max-width: 82%; }
+
+// The website has a site-wide English/Arabic toggle (LanguageContext). The
+// widget's own UI text (not just the AI's replies) should follow that same
+// toggle by default, instead of always showing English regardless of which
+// language the visitor has the site set to.
+const CHATBOT_TEXT = {
+    en: {
+        greeting: "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?",
+        headerTitle: 'Fares',
+        toggleLabel: 'Chat with Fares',
+        toggleTitle: 'Chat with Fares',
+        headerStatus: 'Your Assistant',
+        justNow: 'Just now',
+        clearTitle: 'Clear conversation',
+        closeTitle: 'Close chat',
+        quickPills: ['About SDRS', 'Services', 'Investment', 'Contact Us'],
+        attachTitle: 'Attach File',
+        placeholderThinking: 'Assistant is thinking…',
+        placeholderListening: 'Listening for speech…',
+        placeholderAttachment: 'Add a note and send',
+        placeholderDefault: 'Type a message...',
+        voiceTitle: 'Start Voice Mode',
+        micTitle: 'Voice to Text',
+        statusSpeaking: 'Speaking...',
+        statusListening: 'Listening...',
+        statusProcessing: 'Processing...',
+        statusConnecting: 'Connecting...',
+        interruptHint: 'Tap to interrupt',
+        bubbleTitle: "Hi, I'm Fares 👋",
+        bubbleBody: 'Need help with trade, customs, or logistics? Ask me anything.',
+        bubbleDismiss: 'Dismiss',
+        removeAttachment: 'Remove attachment',
+        thinkingLabel: 'Thinking…',
+        fileTooLarge: (kb, mb) => `That file is too large (${kb} KB). Please attach something under ${mb} MB.`,
+        unsupportedFileType: (type) => `That file type (${type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`,
+        speechToTextUnavailable: 'Speech-to-text is not available in this browser.',
+        micBlocked: 'Microphone access was blocked. Please allow microphone permission to use Voice to Text.',
+        noMic: 'No microphone was found. Please connect one to use Voice to Text.',
+        noTtsVoice: '(Spoken replies are not available in this browser — no text-to-speech voice is installed. You can still type or use "Voice to Text".)',
+        noMatchingVoice: (languageName) => `(This browser doesn't have a ${languageName} voice installed, so the spoken reply above may not sound right — the text itself is correct. You can still type or use "Voice to Text".)`,
+        languageNameArabic: 'Arabic',
+        languageNameUrdu: 'Urdu',
+        attachmentReadFailed: 'Sorry, I could not read that attachment. Please try again.',
+        messageTooLong: (len, max) => `That message is too long (${len} characters). Please keep it under ${max} characters.`,
+        noResponse: 'Sorry, the assistant could not respond right now.',
+        noReplyGenerated: 'Sorry, I could not generate a reply right now.',
+        reachFailed: 'Sorry, I could not reach the assistant right now.'
+    },
+    ar: {
+        greeting: 'مرحباً! أنا فارس، مساعد التجارة في SDRS. كيف يمكنني مساعدتك اليوم؟',
+        headerTitle: 'فارس',
+        toggleLabel: 'تحدث مع فارس',
+        toggleTitle: 'تحدث مع فارس',
+        headerStatus: 'مساعدك الشخصي',
+        justNow: 'الآن',
+        clearTitle: 'مسح المحادثة',
+        closeTitle: 'إغلاق المحادثة',
+        quickPills: ['عن SDRS', 'الخدمات', 'الاستثمار', 'اتصل بنا'],
+        attachTitle: 'إرفاق ملف',
+        placeholderThinking: 'المساعد يفكر…',
+        placeholderListening: 'يستمع للصوت…',
+        placeholderAttachment: 'أضف ملاحظة وأرسل',
+        placeholderDefault: 'اكتب رسالة...',
+        voiceTitle: 'بدء وضع الصوت',
+        micTitle: 'تحويل الصوت إلى نص',
+        statusSpeaking: 'يتحدث...',
+        statusListening: 'يستمع...',
+        statusProcessing: 'جاري المعالجة...',
+        statusConnecting: 'جاري الاتصال...',
+        interruptHint: 'اضغط للمقاطعة',
+        bubbleTitle: 'مرحباً، أنا فارس 👋',
+        bubbleBody: 'تحتاج مساعدة بخصوص التجارة أو الجمارك أو الخدمات اللوجستية؟ اسألني عن أي شيء.',
+        bubbleDismiss: 'إغلاق',
+        removeAttachment: 'إزالة المرفق',
+        thinkingLabel: 'يُفكر…',
+        fileTooLarge: (kb, mb) => `هذا الملف كبير جدًا (${kb} كيلوبايت). يرجى إرفاق ملف أصغر من ${mb} ميجابايت.`,
+        unsupportedFileType: (type) => `نوع هذا الملف (${type || 'غير معروف'}) غير مدعوم حاليًا. يرجى إرفاق صورة أو ملف PDF أو ملف نصي.`,
+        speechToTextUnavailable: 'تحويل الصوت إلى نص غير متوفر في هذا المتصفح.',
+        micBlocked: 'تم حظر الوصول إلى الميكروفون. يرجى السماح بإذن الميكروفون لاستخدام "تحويل الصوت إلى نص".',
+        noMic: 'لم يتم العثور على ميكروفون. يرجى توصيل ميكروفون لاستخدام "تحويل الصوت إلى نص".',
+        noTtsVoice: '(الردود الصوتية غير متوفرة في هذا المتصفح — لا يوجد صوت لتحويل النص إلى كلام. يمكنك الكتابة أو استخدام "تحويل الصوت إلى نص".)',
+        noMatchingVoice: (languageName) => `(هذا المتصفح لا يحتوي على صوت ${languageName} مثبت، فقد لا يبدو الرد الصوتي أعلاه صحيحًا — النص نفسه صحيح. يمكنك الكتابة أو استخدام "تحويل الصوت إلى نص".)`,
+        languageNameArabic: 'العربية',
+        languageNameUrdu: 'الأردية',
+        attachmentReadFailed: 'عذرًا، تعذّر قراءة هذا المرفق. يرجى المحاولة مرة أخرى.',
+        messageTooLong: (len, max) => `هذه الرسالة طويلة جدًا (${len} حرفًا). يرجى أن تكون أقل من ${max} حرفًا.`,
+        noResponse: 'عذرًا، تعذّر على المساعد الرد حاليًا.',
+        noReplyGenerated: 'عذرًا، تعذّر إنشاء رد الآن.',
+        reachFailed: 'عذرًا، تعذّر الوصول إلى المساعد حاليًا.'
+    }
+};
+
+// A small, friendly "robot head" mark used both on the floating launcher button
+// and in the chat header. Built as inline SVG (no image asset to load/cache)
+// using layered gradients and a glossy highlight to read as dimensional/"3D"
+// rather than a flat line icon, matching the brand's navy/red palette.
+// idSuffix keeps gradient ids unique whenever more than one instance could ever
+// render in the DOM at once (launcher + header + greeting bubble).
+function RoboticIcon({ size = 28, idSuffix = 'a', animate = false }) {
+    const headGrad = `botHead-${idSuffix}`;
+    const eyeGrad = `botEye-${idSuffix}`;
+    const antennaGrad = `botAntenna-${idSuffix}`;
+    return (
+        /* The artwork below (antenna through chin/bolts) only occupies
+           roughly x:[5.3,42.7] y:[0.8,40] of a 0-48 box — in particular there
+           is a large unused strip from y=40 to y=48 that nothing ever draws
+           into, while the top edge has almost no margin at all. Rendered at
+           any size, that lopsided gap showed up as a big, bottom-heavy band
+           of empty white space inside the icon's badge. This tightened,
+           evenly-padded viewBox crops that dead space out so the badge's
+           background shows through only as a thin, even border. */
+        <svg className={animate ? 'robotic-icon robotic-icon-live' : 'robotic-icon'} width={size} height={size} viewBox="2.4 -5.2 43.2 47.2" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" overflow="visible">
+            <defs>
+                <linearGradient id={headGrad} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor="#5366e0" />
+                    <stop offset="55%" stopColor="#2d3b76" />
+                    <stop offset="100%" stopColor="#141b3d" />
+                </linearGradient>
+                <radialGradient id={eyeGrad} cx="42%" cy="32%" r="70%">
+                    <stop offset="0%" stopColor="#d6f9ff" />
+                    <stop offset="45%" stopColor="#3ddcff" />
+                    <stop offset="100%" stopColor="#0d8fb5" />
+                </radialGradient>
+                <linearGradient id={antennaGrad} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ff8f8f" />
+                    <stop offset="100%" stopColor="#b82227" />
+                </linearGradient>
+            </defs>
+
+            <g className="robot-antenna">
+                <circle className="antenna-ring antenna-ring-1" cx="24" cy="4" r="5.4" fill="none" stroke="#b82227" strokeWidth="1.2" />
+                <circle className="antenna-ring antenna-ring-2" cx="24" cy="4" r="5.4" fill="none" stroke="#ff8f8f" strokeWidth="1.1" />
+                <line x1="24" y1="4" x2="24" y2="11" stroke="#9aa3c7" strokeWidth="2" strokeLinecap="round" />
+                <circle className="antenna-tip" cx="24" cy="4" r="3.2" fill={`url(#${antennaGrad})`} />
+            </g>
+
+            <g className="robot-body">
+                <rect x="6.5" y="10" width="35" height="30" rx="12" fill={`url(#${headGrad})`} />
+                <path d="M11 15c4.5-4.5 11-5.6 17.5-4.3 5.5 1.1 9.8 3.4 12 6.6-3.4-2.3-9.8-4.3-16.3-4.3-6.4 0-10.8 1.1-13.2 2z" fill="rgba(255,255,255,0.22)" />
+
+                <circle cx="17.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+                <circle cx="30.5" cy="26" r="5.2" fill={`url(#${eyeGrad})`} />
+                <circle cx="16" cy="23.8" r="1.3" fill="#fff" />
+                <circle cx="29" cy="23.8" r="1.3" fill="#fff" />
+
+                <rect x="16.5" y="33.5" width="15" height="3" rx="1.5" fill="rgba(255,255,255,0.32)" />
+
+                <circle cx="7" cy="25" r="1.7" fill="#aab3d6" />
+                <circle cx="41" cy="25" r="1.7" fill="#aab3d6" />
+            </g>
+        </svg>
+    );
+}
+
+const css = `
+#chat-container, #chat-container * { box-sizing: border-box; }
+#chat-container {
+    width: min(400px, calc(100vw - 32px));
+    height: min(640px, calc(100vh - 104px));
+    /* Mobile browsers resize 100vh as the address bar/keyboard show or hide,
+       which can leave the input area hidden. 100dvh tracks the real visible
+       viewport instead; browsers that don't support dvh simply ignore this
+       line and keep the vh-based height above. */
+    height: min(640px, calc(100dvh - 104px));
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 22px 50px rgba(26, 35, 71, 0.22), 0 2px 8px rgba(26, 35, 71, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    border: 1px solid rgba(45, 59, 118, 0.14);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #1a2347;
+    /* Rolls out from the launcher button's corner when opening, and the same
+       transition reverses on close (see the chatMounted/chatEntered state
+       machine driving the .chat-open class) instead of the window instantly
+       popping in/out with no transition at all. */
+    transform-origin: bottom right;
+    transform: scale(0.82) translateY(26px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.24s ease;
+}
+#chat-container.chat-open {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+#chat-header {
+    background: linear-gradient(135deg, #1a2347 0%, #2d3b76 100%);
+    color: white;
+    padding: 16px 14px 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 3px solid #b82227;
+    flex: 0 0 auto;
+    position: relative;
+    overflow: visible;
+    isolation: isolate;
+}
+/* Decorative trade-route grid behind the header copy. Pure CSS so it
+   stays light on mobile — a faint isometric grid and a couple of
+   shipping-arc lines. pointer-events:none so it never steals taps
+   from the close/clear buttons sitting on top. */
+.header-anim {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    border-radius: inherit;
+}
+.header-anim-grid {
+    position: absolute; inset: -40% -20% -10%;
+    background-image:
+        linear-gradient(rgba(110, 214, 255, 0.13) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(110, 214, 255, 0.13) 1px, transparent 1px);
+    background-size: 22px 22px;
+    transform: perspective(280px) rotateX(58deg) scale(1.35);
+    transform-origin: center 80%;
+    animation: headerGridDrift 18s linear infinite;
+    opacity: 0.7;
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 28%, #000 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 28%, #000 100%);
+}
+.header-anim-arcs {
+    position: absolute; left: -8%; right: -8%; bottom: -18%; height: 92%;
+    background:
+        radial-gradient(120% 80% at 12% 108%, transparent 54%, rgba(61, 220, 151, 0.22) 55%, transparent 56%),
+        radial-gradient(110% 78% at 58% 118%, transparent 52%, rgba(110, 214, 255, 0.28) 53%, transparent 54.5%),
+        radial-gradient(90% 70% at 92% 112%, transparent 56%, rgba(61, 220, 151, 0.18) 57%, transparent 58%);
+    animation: headerArcPulse 7s ease-in-out infinite;
+}
+.header-identity, .header-actions { position: relative; z-index: 1; }
+@keyframes headerGridDrift {
+    from { background-position: 0 0, 0 0; }
+    to { background-position: 0 22px, 22px 0; }
+}
+@keyframes headerArcPulse {
+    0%, 100% { opacity: 0.55; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .header-anim-grid, .header-anim-arcs { animation: none; }
+}
+.header-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.header-logo {
+    /* Sized to closely hug the robot icon's own drawn silhouette so only a
+       thin, even edge of white shows around it, instead of a big padded gap. */
+    width: 40px; height: 40px; background: #fff; border-radius: 12px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    color: #2d3b76; font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
+    overflow: visible;
+    /* The antenna ping rings extend a few px past the 40x40 badge. The
+       header itself uses overflow:hidden to clip the grid animation, so
+       this extra stacking context plus a little breathing room on the
+       SVG keeps the rings visible without leaking the grid. */
+    z-index: 2;
+}
+/* One-shot "coming online" turn when the chat window opens, plus a
+   looping antenna ping that stays on for as long as the window is open.
+   Both live on the header instance only (.robotic-icon-live). */
+.header-logo.activate .robotic-icon-live {
+    transform-origin: 50% 58%;
+    animation: robotActivate 0.72s cubic-bezier(0.34, 1.35, 0.64, 1) 1;
+}
+.robotic-icon-live .antenna-ring {
+    transform-origin: 24px 4px;
+    opacity: 0;
+}
+.robotic-icon-live .antenna-ring-1 { animation: antennaPing 1.8s ease-out infinite; }
+.robotic-icon-live .antenna-ring-2 { animation: antennaPing 1.8s ease-out 0.9s infinite; }
+.robotic-icon-live .antenna-tip {
+    transform-origin: 24px 4px;
+    animation: antennaTipGlow 1.8s ease-in-out infinite;
+}
+@keyframes robotActivate {
+    0% { transform: rotate(-18deg) translateX(-8px) scale(0.9); }
+    58% { transform: rotate(8deg) translateX(3px) scale(1.05); }
+    100% { transform: rotate(0deg) translateX(0) scale(1); }
+}
+@keyframes antennaPing {
+    0% { transform: scale(0.7); opacity: 0.72; }
+    100% { transform: scale(1.85); opacity: 0; }
+}
+@keyframes antennaTipGlow {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(184, 34, 39, 0)); }
+    50% { filter: drop-shadow(0 0 3px rgba(184, 34, 39, 0.85)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .header-logo.activate .robotic-icon-live,
+    .robotic-icon-live .antenna-ring-1,
+    .robotic-icon-live .antenna-ring-2,
+    .robotic-icon-live .antenna-tip { animation: none; }
+}
+.header-copy { min-width: 0; }
+/* The online status dot belongs next to the assistant's name ("Fares"),
+   not the subtitle underneath it — moved here from .header-status. The
+   extra 1px left padding (offset by the matching negative margin, so the
+   text itself doesn't actually shift right) gives the dot's glow ring just
+   enough room that .header-title's own overflow:hidden further down
+   doesn't clip its left edge. */
+.header-title {
+    font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 7px;
+    padding-left: 4px; margin-left: -4px;
+}
+.header-status { margin-top: 3px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.78); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18); flex: 0 0 auto; }
+.chat-close-btn, .chat-clear-btn {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.16); color: white;
+    cursor: pointer; width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center; transition: background 0.2s ease;
+}
+.chat-close-btn:hover, .chat-clear-btn:hover { background: rgba(255,255,255,0.2); }
+.header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.chat-toggle-button {
+    position: fixed; bottom: 24px; right: 24px; width: 60px; height: 60px; border-radius: 50%;
+    background: linear-gradient(145deg, #3a4a8f 0%, #2d3b76 55%, #161d42 100%);
+    color: #fff; border: 3px solid #fff;
+    box-shadow: 0 12px 28px rgba(26, 35, 71, 0.32), inset 0 2px 4px rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10000;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    animation: launcherPopIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chat-toggle-button:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 32px rgba(26, 35, 71, 0.38), inset 0 2px 4px rgba(255,255,255,0.25); }
+@keyframes launcherPopIn { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* A soft pulsing ring that radiates outward from the launcher to draw the eye
+   without being as intrusive/animated as the greeting bubble itself. */
+.chat-toggle-button::before {
+    content: ""; position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px;
+    border-radius: 50%; border: 2px solid rgba(61, 220, 151, 0.5);
+    animation: togglePulse 2.6s infinite ease-out; pointer-events: none;
+}
+@keyframes togglePulse { 0% { transform: scale(0.88); opacity: 0.9; } 100% { transform: scale(1.4); opacity: 0; } }
+.chat-toggle-button .button-label {
+    position: absolute; right: 72px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; font-weight: 700; letter-spacing: 0.01em; color: #1a2347; white-space: nowrap;
+    background: #fff; padding: 8px 12px; border-radius: 999px;
+    box-shadow: 0 8px 20px rgba(26, 35, 71, 0.16); border: 1px solid rgba(45, 59, 118, 0.1);
+}
+.chat-toggle-button .button-label::after {
+    content: ""; position: absolute; right: -5px; top: 50%; width: 8px; height: 8px;
+    background: #fff; border-right: 1px solid rgba(45, 59, 118, 0.1); border-top: 1px solid rgba(45, 59, 118, 0.1);
+    transform: translateY(-50%) rotate(45deg);
+}
+#messages {
+    flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+    background: #f4f6fb;
+}
+#messages::-webkit-scrollbar { width: 8px; }
+#messages::-webkit-scrollbar-thumb { background: rgba(45, 59, 118, 0.25); border-radius: 99px; }
+.message-wrapper { display: flex; flex-direction: column; max-width: 84%; }
 .message-wrapper.user { align-self: flex-end; align-items: flex-end; }
 .message-wrapper.bot { align-self: flex-start; align-items: flex-start; }
-.message { padding: 14px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
-.user .message { background: linear-gradient(135deg, #00266b 0%, #0033a0 100%); color: white; border-bottom-right-radius: 6px; }
-.bot .message { background: rgba(255,255,255,0.98); color: #102a43; border-bottom-left-radius: 6px; border: 1px solid rgba(15, 23, 42, 0.08); }
+/* Small round avatar next to each bot reply, similar to common live-chat
+   widgets (e.g. Tawk.to), so replies read as coming from "Fares" rather than
+   an anonymous bubble. */
+.message-row { display: flex; align-items: flex-end; gap: 8px; min-width: 0; }
+.msg-avatar { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; background: #eef1fb; display: flex; align-items: center; justify-content: center; }
+.message-row .message { flex: 1 1 auto; min-width: 0; }
+.message { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
+.user .message { background: #2d3b76; color: white; border-bottom-right-radius: 4px; }
+.bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); }
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
-.timestamp { font-size: 11px; color: #52637a; margin-top: 6px; }
-#input-area { display: flex; align-items: center; gap: 8px; padding: 12px 20px 12px 14px; background: rgba(255,255,255,0.6); border-top: 1px solid rgba(15, 23, 42, 0.06); backdrop-filter: blur(12px); }
-.icon-btn { background: none; border: none; cursor: pointer; color: #64748b; padding: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border-radius: 50%; width: 36px; height: 36px; }
-.icon-btn:hover { color: #0033a0; background: rgba(0, 51, 160, 0.08); }
-#message-input { flex: 1; border: 1px solid rgba(15, 23, 42, 0.06); outline: none; padding: 10px 14px; font-size: 14px; border-radius: 999px; background: rgba(255,255,255,0.9); color: #102a43; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03); resize: none; overflow: hidden; max-height: 160px; }
-#message-input:focus { border-color: rgba(0, 51, 160, 0.24); box-shadow: 0 0 0 3px rgba(0, 51, 160, 0.10); }
-.icon-btn.mic-active { background: rgba(0,122,255,0.12); color: #0047d9; box-shadow: 0 6px 12px rgba(0,71,217,0.08); }
-.icon-btn.voice-active { background: rgba(0,71,217,0.12); color: #0033a0; box-shadow: 0 8px 18px rgba(0,51,160,0.10); }
-#send-btn { background: linear-gradient(135deg, #0033a0 0%, #0047d9 100%); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-left: 6px; box-shadow: 0 10px 20px rgba(0, 51, 160, 0.14); flex: 0 0 auto; }
-#send-btn:disabled { opacity: 0.7; cursor: wait; box-shadow: none; }
-.typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 88px; }
-.typing-dot { width: 8px; height: 8px; border-radius: 50%; background: #0033a0; animation: typingPulse 1.2s infinite ease-in-out; }
+.message ul, .message ol { margin: 6px 0 0; padding-left: 18px; }
+.message a { color: #b82227; }
+.user .message a { color: #fff; }
+.timestamp { font-size: 11px; color: #7b8499; margin-top: 5px; padding: 0 2px; display: flex; align-items: center; gap: 2px; }
+/* WhatsApp-style sent/delivered ticks, shown only on the user's own
+   messages. A single grey tick = sent, still waiting on a reply; the
+   second tick fades in and both turn the brand teal once delivered
+   (the assistant has replied). The second svg overlaps the first by a
+   few px, matching the familiar overlapping double-checkmark look. */
+.msg-ticks { display: inline-flex; color: #9aa3bd; transition: color 0.2s ease; }
+.msg-ticks.delivered { color: #3ddc97; }
+.msg-ticks svg:nth-child(2) { margin-left: -7px; }
+/* Keeps the timestamp lined up under the message bubble's text rather than
+   under the avatar circle now sitting to its left. */
+.message-wrapper.bot .timestamp { padding-left: 34px; }
+#input-area {
+    display: flex; align-items: flex-end; gap: 4px; padding: 10px 12px 12px;
+    background: #fff; border-top: 1px solid rgba(45, 59, 118, 0.1); flex: 0 0 auto;
+}
+.composer { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.icon-btn {
+    background: none; border: none; cursor: pointer; color: #5c6784; padding: 0;
+    display: flex; align-items: center; justify-content: center; transition: color 0.2s, background 0.2s;
+    border-radius: 10px; width: 36px; height: 44px; flex: 0 0 auto;
+}
+.icon-btn:hover { color: #2d3b76; background: rgba(45, 59, 118, 0.08); }
+#message-input {
+    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 11px 14px;
+    font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
+    resize: none; overflow-y: auto; min-height: 44px; height: 44px; max-height: 120px; font-family: inherit;
+    /* Hide the native inner scrollbar (the grey "pipe" on the right of
+       the composer). The box itself still grows up to max-height, and
+       once it hits that cap the user can still scroll with the wheel
+       or by dragging inside the field — just without a visible bar. */
+    scrollbar-width: none;
+    /* No transition here on purpose — growing while actively typing needs
+       to feel instant, not animated (see autoResizeMessageInput()'s comment).
+       A transition is applied inline, only for the brief moment the
+       composer settles back down after sending/clearing. */
+}
+#message-input::-webkit-scrollbar { display: none; }
+#message-input:focus { border-color: #2d3b76; background: #fff; box-shadow: 0 0 0 3px rgba(45, 59, 118, 0.12); }
+.icon-btn.mic-active { background: rgba(184, 34, 39, 0.1); color: #b82227; }
+.icon-btn.voice-active { background: rgba(45, 59, 118, 0.12); color: #2d3b76; }
+#send-btn {
+    background: #2d3b76; color: white; border: none; border-radius: 12px; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto;
+}
+#send-btn:hover { background: #1a2347; }
+#send-btn:disabled { opacity: 0.55; cursor: wait; }
+.attachment-chip {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 10px; border-radius: 10px; background: rgba(45, 59, 118, 0.08);
+    color: #2d3b76; font-size: 12px; max-width: 100%;
+}
+.attachment-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip button { border: none; background: transparent; color: #2d3b76; cursor: pointer; padding: 0; font-size: 16px; line-height: 1; }
+.typing-indicator { display: inline-flex; align-items: center; gap: 6px; min-width: 64px; }
+.typing-dot { width: 7px; height: 7px; border-radius: 50%; background: #2d3b76; animation: typingPulse 1.2s infinite ease-in-out; }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
-@keyframes typingPulse { 0%, 80%, 100% { transform: translateY(0); opacity: 0.5; } 40% { transform: translateY(-3px); opacity: 1; } }
+@keyframes typingPulse { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-3px); opacity: 1; } }
 
-.quick-pills { display:flex; gap:8px; padding: 8px 18px 0 18px; flex-wrap:wrap; }
-.pill { background: rgba(255,255,255,0.7); border: 1px solid rgba(15,23,42,0.04); color: #0f172a; padding:6px 10px; border-radius:999px; font-size:13px; cursor:pointer; box-shadow: 0 6px 12px rgba(15,23,42,0.03); }
-.pill:hover { background: rgba(255,255,255,0.9); }
+.quick-pills { display: flex; gap: 8px; padding: 10px 12px 0; flex-wrap: wrap; background: #fff; }
+.pill {
+    /* Solid brand-colored outline + solid brand-colored text (like Tawk.to's
+       quick-reply chips), instead of the previous faint, barely-visible border. */
+    background: #fff; border: 1.5px solid #2d3b76; color: #2d3b76;
+    padding: 8px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.pill:hover { background: rgba(45, 59, 118, 0.08); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(45, 59, 118, 0.14); }
+.header-title, .header-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 520px) {
+    #chat-container {
+        right: 12px; left: 12px; bottom: 12px; width: auto;
+        height: min(720px, calc(100vh - 24px));
+        height: min(720px, calc(100dvh - 24px));
+        border-radius: 16px;
+        /* Spans nearly the full width on mobile, so anchoring the roll-in/out
+           to the bottom-right corner (as on desktop, near the launcher)
+           would look lopsided — center it instead. */
+        transform-origin: bottom center;
+    }
+    .chat-toggle-button { right: 16px; bottom: 16px; }
+    .chat-toggle-button .button-label { display: none; }
+    /* iOS Safari auto-zooms the page when focusing an input with font-size
+       under 16px — bump it up only on small screens so typing a message
+       doesn't unexpectedly zoom the whole widget in. */
+    #message-input { font-size: 16px; }
+    /* Keep every tap target comfortably within Apple/Google's ~44px guidance
+       once the composer icons are squeezed onto a narrow screen. */
+    .icon-btn { width: 40px; height: 44px; }
+    #send-btn { width: 44px; height: 44px; }
+    .chat-greeting-bubble { right: 16px; left: 16px; max-width: none; bottom: 86px; }
+    .chat-greeting-bubble::after { display: none; }
+}
+
+/* GREETING BUBBLE */
+.chat-greeting-bubble {
+    position: fixed; bottom: 94px; right: 20px; max-width: 240px; z-index: 9998;
+    background: #fff; color: #1a2347; padding: 12px 30px 12px 12px; border-radius: 16px;
+    box-shadow: 0 14px 32px rgba(26, 35, 71, 0.26), 0 2px 8px rgba(26, 35, 71, 0.1);
+    border: 1px solid rgba(45, 59, 118, 0.12);
+    display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    animation: bubblePop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chat-greeting-bubble.closing { animation: bubbleOut 0.22s ease forwards; }
+.chat-greeting-bubble::after {
+    content: ""; position: absolute; bottom: -6px; right: 30px; width: 14px; height: 14px;
+    background: #fff; transform: rotate(45deg);
+    border-right: 1px solid rgba(45, 59, 118, 0.12); border-bottom: 1px solid rgba(45, 59, 118, 0.12);
+}
+.bubble-avatar {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; background: #f4f6fb;
+    display: flex; align-items: center; justify-content: center;
+}
+.bubble-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bubble-copy strong { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.bubble-copy span { font-size: 12.5px; font-weight: 500; line-height: 1.4; color: #4c5578; }
+.bubble-close {
+    position: absolute; top: 7px; right: 8px; width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(45, 59, 118, 0.08); border: none; color: #5c6784; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; padding: 0;
+}
+.bubble-close:hover { background: rgba(45, 59, 118, 0.16); }
+.bubble-sparkle { position: absolute; pointer-events: none; font-size: 13px; color: #ffcb4d; animation: sparkleTwinkle 1.8s infinite ease-in-out; }
+.bubble-sparkle-1 { top: -9px; left: 14px; animation-delay: 0s; }
+.bubble-sparkle-2 { top: 10px; right: -7px; font-size: 9px; color: #6fd6ff; animation-delay: 0.55s; }
+.bubble-sparkle-3 { bottom: -7px; left: 44px; font-size: 10px; color: #ff9fb0; animation-delay: 1.05s; }
+@keyframes bubblePop { from { opacity: 0; transform: translateY(14px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes bubbleOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(8px) scale(0.92); } }
+@keyframes sparkleTwinkle { 0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(18deg); } }
 
 /* VOICE OVERLAY */
 #voice-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.98); z-index: 100; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 40px 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
 #voice-overlay.active { transform: translateY(0); }
-.voice-center-ring { width: 250px; height: 250px; border-radius: 50%; border: 4px solid #f1f5f9; background: transparent; display: flex; justify-content: center; align-items: center; margin-top: 100px; position: relative; cursor: pointer; }
+.voice-center-ring { width: 200px; height: 200px; border-radius: 50%; border: 4px solid rgba(45, 59, 118, 0.12); background: transparent; display: flex; justify-content: center; align-items: center; margin-top: 48px; position: relative; cursor: pointer; }
 .voice-center-ring:hover { border-color: #e2e8f0; }
 #visualizer { display: flex; align-items: center; justify-content: center; height: 80px; gap: 6px; pointer-events: none;}
 
@@ -83,16 +587,62 @@ const css = `
 `;
 
 export default function Chatbot() {
+    // Follows the site-wide English/Arabic toggle so the widget's own text
+    // (not just the AI's replies) defaults to whichever language the visitor
+    // currently has the site set to.
+    const { language } = useLanguage();
+    const t = CHATBOT_TEXT[language] || CHATBOT_TEXT.en;
+
     const [messages, setMessages] = useState([
-        { role: 'bot', text: 'Hello! I am the SDRS AI Assistant. How can I help you today?', time: 'Just now' }
+        // `time` is stored as a raw epoch ms number, not a pre-formatted
+        // string — formatMessageTime() below turns a fresh timestamp into
+        // "Just now" and an older one into an actual clock time, the same
+        // way most chat apps (WhatsApp, Slack, Messenger) label messages.
+        { role: 'bot', text: t.greeting, time: Date.now() }
     ]);
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(false);
+    // The window is kept mounted for a bit after isChatOpen flips back to
+    // false, and chatEntered drives the CSS class that actually animates —
+    // this is what makes the close transition play instead of the window
+    // just vanishing instantly when React unmounts it.
+    const [chatMounted, setChatMounted] = useState(false);
+    const [chatEntered, setChatEntered] = useState(false);
+    const chatAnimFrameRef = useRef(null);
     const [isVoiceActive, setIsVoiceActive] = useState(false);
+    // Mirrors isVoiceActive for async callbacks (MediaRecorder.onstop, fetch
+    // continuations) that were created from an earlier render. Reading the state
+    // variable directly in those closures can see a stale "still active" value
+    // even after closeVoice() has already turned voice mode off, letting a
+    // recording made just before closing still get sent and spoken aloud.
+    const isVoiceActiveRef = useRef(false);
     const [voiceState, setVoiceState] = useState('connecting');
+    // Root cause of "live voice mode never speaks": playHumanVoice() is an async
+    // function that awaits across multiple sentences/delays. Its loop condition
+    // read the `voiceState` React state variable directly, which is captured once
+    // per render — by the time setVisualizerState('speaking') was called and the
+    // loop started, this closure's `voiceState` was still whatever it was BEFORE
+    // that render (e.g. 'listening' or 'processing'), so `voiceState !== 'speaking'`
+    // was true on the very first check and the loop broke immediately, before
+    // speechSynthesis.speak() was ever called. A transcript still appeared because
+    // that comes from a separate code path. Mirror the state into a ref, updated
+    // everywhere setVisualizerState runs, and read the ref inside the async loop.
+    const voiceStateRef = useRef('connecting');
     const [isThinking, setIsThinking] = useState(false);
     const [selectedAttachment, setSelectedAttachment] = useState(null);
     const [isDictating, setIsDictating] = useState(false);
+    // A one-time attention-getting bubble shown a few seconds after a visitor
+    // lands on the page, similar to what most live-chat widgets do. Tracked in
+    // sessionStorage (not state alone) so navigating between pages in the same
+    // visit doesn't re-show it on every single page load.
+    const [showGreetingBubble, setShowGreetingBubble] = useState(false);
+    const [bubbleClosing, setBubbleClosing] = useState(false);
+    // Purely a re-render trigger (its value is never read) so each message's
+    // "Just now" label flips over to its real timestamp on its own, a few
+    // seconds after it stops being brand-new — see formatMessageTime().
+    const [, setNowTick] = useState(0);
+    const audioContextRef = useRef(null);
+    const chatContainerRef = useRef(null);
 
     const messagesRef = useRef(null);
     const endRef = useRef(null);
@@ -100,15 +650,30 @@ export default function Chatbot() {
     const messageInputRef = useRef(null);
     const speechBufferRef = useRef('');
     const dictationBaseRef = useRef('');
+    // Tracks whether the user still wants dictation running. Needed because even
+    // with continuous=true, some browsers still end a recognition session on
+    // their own after a longer pause or a transient hiccup — onend uses this to
+    // decide whether to auto-resume instead of forcing the user to click the mic
+    // button again.
+    const dictationActiveRef = useRef(false);
+    // Set on a fatal error (mic permission denied, no microphone, etc.) so onend
+    // doesn't try to auto-restart a session that can never succeed.
+    const dictationFatalErrorRef = useRef(false);
 
     const micStreamRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
-    const currentAudioRef = useRef(null);
+    const currentUtteranceRef = useRef(null);
     const audioQueueRef = useRef([]);
     const silenceDetectorRef = useRef(null);
     const speechRecognitionRef = useRef(null);
     const recorderTimerRef = useRef(null);
+    // How most voice-dictation UIs behave (Google voice search, WhatsApp, Siri,
+    // etc.): the mic doesn't listen forever just because it was clicked once —
+    // it auto-stops after the speaker goes quiet for a few seconds. Tracks the
+    // pending "give up and stop" timeout, reset every time new speech comes in.
+    const dictationSilenceTimerRef = useRef(null);
+    const inputAreaRef = useRef(null);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -118,7 +683,7 @@ export default function Chatbot() {
             recog.interimResults = false;
             recog.onend = () => {
                 const mr = mediaRecorderRef.current;
-                if (isVoiceActive && mr && mr.state === 'recording') mr.stop();
+                if (isVoiceActiveRef.current && mr && mr.state === 'recording') mr.stop();
             };
             silenceDetectorRef.current = recog;
         }
@@ -132,24 +697,369 @@ export default function Chatbot() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // A new bot reply used to always snap the scroll position to the very
+    // bottom of the panel — fine for short replies, but a long answer then
+    // opened showing only its last line, forcing the visitor to scroll back
+    // up just to read it from the start. Scroll new bot replies so their TOP
+    // is in view instead; a new user message (which is always short, just
+    // typed) still scrolls to the bottom as before, so the composer and the
+    // upcoming typing indicator stay visible.
+    const prevMessagesLenRef = useRef(messages.length);
     useEffect(() => {
-        if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+        const container = messagesRef.current;
+        if (!container) return;
+        const prevLen = prevMessagesLenRef.current;
+        prevMessagesLenRef.current = messages.length;
+
+        if (messages.length <= prevLen || messages.length === 0) {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+            return;
+        }
+
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage.role === 'bot') {
+            const wrappers = container.querySelectorAll('.message-wrapper:not(.typing-wrapper)');
+            const lastEl = wrappers[wrappers.length - 1];
+            if (lastEl) {
+                // Bug fix: `.offsetTop` is relative to the nearest *positioned*
+                // ancestor, not necessarily this scroll container — #messages
+                // itself has no `position` set, so offsetTop was actually
+                // measured against the chat window's fixed-position root
+                // (header and all), producing a value far larger than this
+                // container's real scrollable height. The browser clamps an
+                // out-of-range scrollTop to its max, which is why this always
+                // ended up scrolled to the very bottom instead of the top of
+                // the new reply. Measuring both rects against the viewport and
+                // taking the difference is correct regardless of what
+                // positioning context sits above this container.
+                const target = lastEl.getBoundingClientRect().top
+                    - container.getBoundingClientRect().top
+                    + container.scrollTop
+                    - 10;
+                container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+                return;
+            }
+        }
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
     }, [messages]);
 
+    // The typing indicator isn't part of `messages`, so it needs its own nudge
+    // to scroll into view the moment it appears.
+    useEffect(() => {
+        if (!isThinking) return;
+        const container = messagesRef.current;
+        if (container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }, [isThinking]);
+
+    // Bug fix: the greeting text was set once, in the useState initializer
+    // above, from whatever language was active the moment the widget first
+    // mounted (usually page load). Toggling the site's EN/AR switch afterward
+    // correctly re-renders the header, pills, and placeholder (they read `t`
+    // fresh every render) — but that frozen greeting message never updated,
+    // so it could keep showing English after switching to Arabic (or vice
+    // versa). Refresh it when the language changes, but only while the
+    // conversation is still just that single greeting — a real exchange
+    // already in progress is left alone.
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length === 1 && prev[0].role === 'bot') {
+                return [{ ...prev[0], text: t.greeting, time: Date.now() }];
+            }
+            return prev;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [language]);
+
+    // Drives the open/close animation. The window stays mounted briefly after
+    // isChatOpen goes false so its exit transition can actually play, and
+    // chatEntered is flipped on a frame after mount (not in the same tick) so
+    // the browser has painted the "closed" starting styles before the CSS
+    // transition to "open" begins — otherwise it would just appear already
+    // open, with nothing to visibly transition from.
+    useEffect(() => {
+        if (isChatOpen) {
+            setChatMounted(true);
+            // Bug fix: only the outer rAF's id was kept, so if the chat was
+            // closed again within the ~16-32ms before the inner rAF had fired,
+            // cleanup couldn't cancel it — the now-stale `setChatEntered(true)`
+            // would still fire a frame later, briefly flashing the window back
+            // open mid-close. Always track whichever rAF is currently pending
+            // so cleanup can reliably cancel it.
+            chatAnimFrameRef.current = requestAnimationFrame(() => {
+                chatAnimFrameRef.current = requestAnimationFrame(() => {
+                    chatAnimFrameRef.current = null;
+                    setChatEntered(true);
+                    try { autoResizeMessageInput(); } catch (e) {}
+                });
+            });
+            return () => {
+                if (chatAnimFrameRef.current) cancelAnimationFrame(chatAnimFrameRef.current);
+            };
+        }
+        setChatEntered(false);
+        const unmountTimer = setTimeout(() => setChatMounted(false), 320);
+        return () => clearTimeout(unmountTimer);
+    }, [isChatOpen]);
+
+    // Single source of truth for the composer's auto-grow behaviour. This used
+    // to be duplicated three times (window resize, typing, and dictation) with
+    // slightly different logic in each copy — notably only this one capped the
+    // computed height at 120px to match the #message-input CSS max-height; the
+    // typing and dictation copies set an uncapped height, so every single
+    // keystroke forced the browser to lay out a taller-than-needed box only to
+    // have CSS clip it back down to 120px, a wasted reflow that showed up as a
+    // visible "jump"/flicker in the composer's height while typing a longer
+    // message instead of a smooth, single resize up to the cap.
+    // While actively typing, the box should feel instant and solid — most
+    // good chat composers (Intercom, Crisp, LiveChat) grow with no visible
+    // animation lag as each character lands, since animating every single
+    // keystroke makes the box feel like it's "chasing" the cursor instead of
+    // keeping up with it. The one place a smooth animation actually helps is
+    // the opposite direction: settling back down to a single line right
+    // after sending/clearing, so that doesn't feel like an abrupt snap.
+    // `animate` is only passed true from those two call sites.
+    const COMPOSER_MIN_HEIGHT = 44;
+    function autoResizeMessageInput(animate = false) {
+        const el = messageInputRef.current;
+        if (!el) return;
+        el.style.transition = animate ? 'height 0.16s ease' : 'none';
+        // Never collapse below the resting single-line height. Setting
+        // height to 'auto' then to a raw scrollHeight (with
+        // box-sizing:border-box on every widget element) made the field
+        // look tall at rest and then snap smaller on the first click /
+        // keystroke, because scrollHeight and the CSS min-height were
+        // measuring different boxes.
+        el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
+        const next = Math.max(COMPOSER_MIN_HEIGHT, Math.min(el.scrollHeight, 120));
+        el.style.height = `${next}px`;
+        if (animate) {
+            setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
+        }
+    }
+
+    useEffect(() => {
+        window.addEventListener('resize', autoResizeMessageInput);
+        return () => window.removeEventListener('resize', autoResizeMessageInput);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Ticks a few times a minute so any message still showing "Just now"
+    // gets re-evaluated and flips to its real timestamp once it crosses the
+    // JUST_NOW_WINDOW_MS threshold, without needing any other state change
+    // to happen to trigger that re-render.
+    useEffect(() => {
+        const tickInterval = setInterval(() => setNowTick(n => n + 1), 5000);
+        return () => clearInterval(tickInterval);
+    }, []);
+
+    useEffect(() => {
+        if (isChatOpen) return;
+        let alreadyShown = false;
+        try { alreadyShown = sessionStorage.getItem('sdrs_chat_bubble_shown') === '1'; } catch (e) {}
+        if (alreadyShown) return;
+
+        const showTimer = setTimeout(() => {
+            setShowGreetingBubble(true);
+            try { sessionStorage.setItem('sdrs_chat_bubble_shown', '1'); } catch (e) {}
+            playLandingChime();
+        }, 2500);
+
+        return () => clearTimeout(showTimer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!showGreetingBubble) return;
+        const hideTimer = setTimeout(() => dismissBubble(), 9000);
+        return () => clearTimeout(hideTimer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showGreetingBubble]);
+
+    // Clicking anywhere on the page outside the open chat window closes it,
+    // matching the behavior visitors expect from most chat widgets. Listening
+    // on mousedown (rather than click) catches the interaction a beat earlier,
+    // before any click handler on the page underneath has a chance to run.
+    useEffect(() => {
+        if (!isChatOpen) return;
+        function handleOutsideClick(event) {
+            if (chatContainerRef.current && !chatContainerRef.current.contains(event.target)) {
+                hideChat();
+            }
+        }
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isChatOpen]);
+
+    // Dictation shouldn't keep listening forever just because it was started
+    // once — clicking anywhere other than the composer (the message input,
+    // attach/voice/mic/send buttons) means the visitor has moved on to doing
+    // something else, e.g. reading earlier messages, tapping a quick-reply
+    // pill, or clicking outside the chat entirely. Combined with the silence
+    // timeout above, this matches how dictation behaves in most chat/voice UIs.
+    useEffect(() => {
+        if (!isDictating) return;
+        function handleClickAwayFromComposer(event) {
+            if (inputAreaRef.current && !inputAreaRef.current.contains(event.target)) {
+                stopDictation();
+            }
+        }
+        document.addEventListener('mousedown', handleClickAwayFromComposer);
+        return () => document.removeEventListener('mousedown', handleClickAwayFromComposer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDictating]);
+
+    function dismissBubble() {
+        setBubbleClosing(true);
+        setTimeout(() => {
+            setShowGreetingBubble(false);
+            setBubbleClosing(false);
+        }, 220);
+    }
+
+    function openChatFromBubble() {
+        dismissBubble();
+        openChat();
+    }
+
     function appendMessage(text, role) {
-        setMessages(prev => [...prev, { role, text, time: new Date().toLocaleTimeString() }]);
+        setMessages(prev => [...prev, { role, text, time: Date.now() }]);
+    }
+
+    // How most chat apps label message times: a brand-new message reads
+    // "Just now" rather than an exact clock time, then settles into a real
+    // timestamp once it's not brand-new anymore. `nowTick` below exists
+    // purely to force a re-render every few seconds so a message actually
+    // flips over from "Just now" to its real time on its own, instead of
+    // only updating the next time something else causes a re-render.
+    const JUST_NOW_WINDOW_MS = 15000;
+    function formatMessageTime(timestamp) {
+        if (typeof timestamp !== 'number') return timestamp;
+        return (Date.now() - timestamp) < JUST_NOW_WINDOW_MS ? t.justNow : new Date(timestamp).toLocaleTimeString();
+    }
+
+    // --- Tiny UI sound cues (landing chime, thinking blip, reply ding) ---
+    // Synthesized with the Web Audio API instead of shipping audio files, so
+    // there's nothing to host/license — just a couple of short, soft sine-wave
+    // tones. getAudioContext() is lazy (creating one before any user gesture
+    // is harmless; it just starts "suspended" on some browsers).
+    function getAudioContext() {
+        if (!audioContextRef.current) {
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx) return null;
+                audioContextRef.current = new Ctx();
+            } catch (e) {
+                return null;
+            }
+        }
+        return audioContextRef.current;
+    }
+
+    function playTone(ctx, freq, startTime, duration, peakGain) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, startTime);
+        gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.03);
+    }
+
+    // Browsers block audio with sound until the visitor has interacted with
+    // the page at least once — expected for the very first landing chime,
+    // which fires on a timer with no click involved. Rather than let it
+    // silently fail forever, queue it to play on the visitor's first
+    // click/tap/keypress anywhere on the page instead.
+    function playChime(renderTones) {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const fire = () => {
+            try { renderTones(ctx); } catch (e) { /* audio is non-critical */ }
+        };
+        if (ctx.state === 'suspended') {
+            const resumeAndFire = () => {
+                ctx.resume().then(fire).catch(() => {});
+                document.removeEventListener('pointerdown', resumeAndFire);
+                document.removeEventListener('keydown', resumeAndFire);
+            };
+            document.addEventListener('pointerdown', resumeAndFire, { once: true });
+            document.addEventListener('keydown', resumeAndFire, { once: true });
+            return;
+        }
+        fire();
+    }
+
+    function playLandingChime() {
+        playChime((ctx) => {
+            const now = ctx.currentTime;
+            playTone(ctx, 880, now, 0.18, 0.07);
+            playTone(ctx, 1318.5, now + 0.1, 0.22, 0.06);
+        });
+    }
+
+    function playThinkingBlip() {
+        playChime((ctx) => {
+            playTone(ctx, 600, ctx.currentTime, 0.07, 0.035);
+        });
+    }
+
+    function playReplyChime() {
+        playChime((ctx) => {
+            const now = ctx.currentTime;
+            playTone(ctx, 1046.5, now, 0.1, 0.05);
+            playTone(ctx, 1568, now + 0.07, 0.16, 0.045);
+        });
     }
 
     function triggerFileUpload() {
         fileInputRef.current?.click();
     }
 
+    // Vercel serverless functions cap the request body around 4.5MB, and base64
+    // inflates a file's size by roughly a third. Reject oversized files up front
+    // with an honest message instead of letting the upload silently fail later.
+    const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+    // Mirrors backend/validation.js's MAX_MESSAGE_LENGTH. This is just a fast,
+    // friendly client-side check — the backend enforces the real limit
+    // regardless, since a direct API call could always skip this file entirely.
+    const MAX_MESSAGE_LENGTH = 6000;
+    // Gemini's inlineData understands images, PDFs, and plain text well; other
+    // binary types (zip, exe, docx, etc.) either fail silently or waste a call
+    // producing a confused reply. Reject them up front with an honest message
+    // instead of sending bytes Gemini can't actually use.
+    const ACCEPTED_ATTACHMENT_TYPES = ['image/', 'application/pdf', 'text/plain'];
+
     async function handleAttachmentSelect(event) {
         const file = event.target.files?.[0];
+        event.target.value = '';
         if (!file) return;
 
-        event.target.value = '';
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+            appendMessage(t.fileTooLarge(Math.round(file.size / 1024), Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)), 'bot');
+            return;
+        }
+
+        const isAccepted = ACCEPTED_ATTACHMENT_TYPES.some(prefix => file.type?.startsWith(prefix));
+        if (!isAccepted) {
+            appendMessage(t.unsupportedFileType(file.type), 'bot');
+            return;
+        }
+
         setSelectedAttachment(file);
+    }
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
     }
 
     async function initHardware() {
@@ -159,39 +1069,162 @@ export default function Chatbot() {
     }
 
     function setVisualizerState(state) {
+        voiceStateRef.current = state;
         setVoiceState(state);
+    }
+
+    // Picks a loaded voice matching the target language, if the browser has one.
+    // getVoices() can return [] before the async 'voiceschanged' event fires in some
+    // browsers, so this is best-effort — omitting a voice still works fine, the
+    // browser just falls back to its own default for the utterance's lang.
+    //
+    // Chrome typically exposes two kinds of voices per language: the OS's local
+    // SAPI/system voices (voice.localService === true — usually the flatter,
+    // more "robotic"-sounding ones) and Chrome's own cloud-backed Google voices
+    // (localService === false — noticeably more natural, and still completely
+    // free/built into the browser, no API calls or billing involved). Prefer the
+    // latter whenever one is available for the target language.
+    function pickVoice(lang) {
+        try {
+            const voices = window.speechSynthesis.getVoices();
+            const short = lang.split('-')[0];
+            const candidates = voices.filter(v => v.lang === lang || v.lang?.startsWith(short));
+            if (candidates.length === 0) return null;
+            const cloudVoice = candidates.find(v => v.localService === false);
+            return cloudVoice || candidates[0];
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Chrome (and some other browsers) load TTS voices asynchronously and can
+    // report zero voices for a short window right after page load, or in rare
+    // cases forever if the OS has no TTS voices installed at all. Wait briefly for
+    // them rather than speaking into a voice list that isn't ready yet.
+    function waitForVoices(timeoutMs = 1000) {
+        return new Promise(resolve => {
+            const existing = window.speechSynthesis.getVoices();
+            if (existing.length > 0) return resolve(existing);
+
+            let done = false;
+            const finish = (voices) => {
+                if (done) return;
+                done = true;
+                window.speechSynthesis.onvoiceschanged = null;
+                resolve(voices);
+            };
+            window.speechSynthesis.onvoiceschanged = () => finish(window.speechSynthesis.getVoices());
+            setTimeout(() => finish(window.speechSynthesis.getVoices()), timeoutMs);
+        });
     }
 
     async function playHumanVoice(text) {
         stopAudioEngine();
-        const isUrdu = /[\u0600-\u06FF]/.test(text) || text.toLowerCase().includes('aur') || text.toLowerCase().includes('hai');
-        const lang = isUrdu ? 'ur' : 'en-US';
 
-        audioQueueRef.current = text.match(/[^.!?،۔]+[.!?،۔]+/g) || [text];
+        if (!window.speechSynthesis) {
+            // No TTS engine available in this browser — skip straight back to
+            // listening instead of leaving the overlay silently stuck.
+            if (isVoiceActiveRef.current) startListeningLoop();
+            return;
+        }
+
+        // Chrome has a known quirk where speak() called immediately after cancel()
+        // in the same tick can silently be dropped. A short delay, plus waiting for
+        // the voice list, avoids racing that.
+        await new Promise(r => setTimeout(r, 50));
+        const availableVoices = await waitForVoices();
+
+        if (availableVoices.length === 0) {
+            // Genuinely no TTS voice installed on this device/browser — speaking is
+            // not possible here regardless of what our code does. Say so once in the
+            // transcript instead of the overlay silently doing nothing forever.
+            appendMessage(t.noTtsVoice, 'bot');
+            if (isVoiceActiveRef.current) startListeningLoop();
+            return;
+        }
+
+        const lang = detectVoiceLanguage(text);
+        // Markdown (bullets, bold, links) reads aloud as disjointed fragments, not
+        // flowing speech — the voice-chat prompt now asks the model to avoid it,
+        // but this is a cheap defensive normalization in case any slips through.
+        const speakableText = stripMarkdownForSpeech(text);
+        audioQueueRef.current = speakableText.match(/[^.!?،۔]+[.!?،۔]+/g) || [speakableText];
         setVisualizerState('speaking');
 
+        // If the reply is Arabic/Urdu but this browser/OS has no voice installed
+        // for that language at all, speechSynthesis will still try to speak it —
+        // usually with a default English voice reading the script under English
+        // phonetic rules, which comes out as garbled noise rather than Arabic,
+        // not just "accented". The reply text itself is still correct (it's shown
+        // in the transcript normally); only the audio is affected. Warn once,
+        // non-blockingly, instead of leaving the user confused by bad audio with
+        // no explanation.
+        const langPrefix = lang.split('-')[0];
+        const hasMatchingVoice = availableVoices.some(v => v.lang === lang || v.lang?.toLowerCase()?.startsWith(langPrefix));
+        if (!hasMatchingVoice && langPrefix !== 'en') {
+            console.warn(`[voice] no installed TTS voice found for "${lang}" — spoken audio may not sound right. Available voice langs:`, availableVoices.map(v => v.lang));
+            const languageName = lang === 'ar-SA' ? t.languageNameArabic : lang === 'ur-PK' ? t.languageNameUrdu : lang;
+            appendMessage(t.noMatchingVoice(languageName), 'bot');
+        }
+
         for (let i = 0; i < audioQueueRef.current.length; i++) {
-            if (!isVoiceActive || voiceState !== 'speaking') break;
+            if (!isVoiceActiveRef.current || voiceStateRef.current !== 'speaking') break;
             const sentence = audioQueueRef.current[i].trim();
             if (!sentence) continue;
 
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(sentence)}`;
-            currentAudioRef.current = new Audio(url);
+            const utterance = new SpeechSynthesisUtterance(sentence);
+            utterance.lang = lang;
+            const voice = pickVoice(lang);
+            if (voice) utterance.voice = voice;
+            // The default rate (1.0) reads noticeably flat and rushed on most
+            // browser TTS voices. A slightly slower, calmer pace sounds more like
+            // someone actually talking. Pitch is deliberately left at the engine's
+            // default — these are formant/concatenative voices, not neural ones,
+            // and shifting pitch away from default tends to make them sound worse
+            // (more "cartoonish"), not more human.
+            utterance.rate = 0.95;
+            currentUtteranceRef.current = utterance;
 
+            // Guard against a Chrome bug where onend/onerror can simply never fire
+            // for a given utterance — without this, that would hang the overlay in
+            // "speaking" state forever instead of just skipping that sentence.
             await new Promise(resolve => {
-                currentAudioRef.current.onended = resolve;
-                currentAudioRef.current.onerror = resolve;
-                currentAudioRef.current.play().catch(resolve);
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(watchdog);
+                    resolve();
+                };
+                const watchdog = setTimeout(finish, 8000);
+                utterance.onend = finish;
+                utterance.onerror = finish;
+                try {
+                    window.speechSynthesis.speak(utterance);
+                } catch (e) {
+                    finish();
+                }
             });
+
+            // A brief natural pause between sentences, like a real speaker taking a
+            // breath, instead of the engine cutting straight into the next
+            // utterance — that abrupt back-to-back restart is part of what makes
+            // consecutive short utterances sound mechanical.
+            if (isVoiceActiveRef.current && voiceStateRef.current === 'speaking' && i < audioQueueRef.current.length - 1) {
+                await new Promise(r => setTimeout(r, 180));
+            }
         }
 
-        if (isVoiceActive && voiceState === 'speaking') {
+        if (isVoiceActiveRef.current && voiceStateRef.current === 'speaking') {
             startListeningLoop();
         }
     }
 
     function stopAudioEngine() {
-        if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+        if (window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+        }
+        currentUtteranceRef.current = null;
         audioQueueRef.current = [];
     }
 
@@ -221,8 +1254,14 @@ export default function Chatbot() {
             mediaRecorderRef.current = mr;
             mr.ondataavailable = e => audioChunksRef.current.push(e.data);
             mr.onstop = async () => {
-                if (!isVoiceActive) return;
+                if (!isVoiceActiveRef.current) return;
                 setVisualizerState('processing');
+                // Audio has to go: upload -> Gemini listens/thinks/replies ->
+                // download, before anything can be heard — a real gap with no
+                // feedback at all, which is exactly what made this feel stuck
+                // to the user. A short tone the instant recording stops gives
+                // an immediate "heard you, working on it" cue to fill it.
+                playThinkingBlip();
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 // allow smaller blobs to be processed to avoid endless listening loops
                 try { clearTimeout(recorderTimerRef.current); recorderTimerRef.current = null; } catch (e) {}
@@ -256,22 +1295,43 @@ export default function Chatbot() {
     }
 
     const backendUrl = getBackendUrl();
-    const initialBotGreeting = 'Hello! I am the SDRS AI Assistant. How can I help you today?';
+    // History sent to Gemini must strictly alternate user/model turns. The visible
+    // `messages` list also holds UI-only entries (the greeting, the "thinking"
+    // placeholder, and error placeholders shown after a failed request) and, after
+    // any failed turn, a user message with no matching reply. Deriving the API
+    // history from that display list can produce two user turns in a row, which
+    // Gemini rejects outright. To avoid that, keep a separate ref that only grows
+    // once a turn actually succeeds, so it always alternates cleanly.
+    const conversationHistoryRef = useRef([]);
+    // Voice mode previously called the model fresh on every turn with no memory of
+    // earlier exchanges in the same voice session, so a follow-up like "what about
+    // pricing" had nothing to follow up on. Track it the same way text chat does.
+    const voiceHistoryRef = useRef([]);
 
     async function sendAudioToGemini(base64Audio) {
-        if (!isVoiceActive) return;
+        if (!isVoiceActiveRef.current) return;
         try {
             const response = await fetch(`${backendUrl}/api/voice-chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audioBase64: base64Audio })
+                body: JSON.stringify({ audioBase64: base64Audio, history: voiceHistoryRef.current, uiLanguage: language })
             });
             const data = await response.json();
 
-            if (data.transcript && data.transcript !== '...') appendMessage(data.transcript, 'user');
-
+            // Live voice mode is meant to be speaking-only at both ends — the
+            // transcript/reply used to also get appended as text bubbles in
+            // the chat log underneath, which looked like a transcription
+            // feature mid-call rather than a voice conversation. Still track
+            // both in voiceHistoryRef (not shown anywhere) so follow-up
+            // questions in the same voice session keep their context.
             if (data.reply) {
-                appendMessage(data.reply, 'bot');
+                if (data.transcript && data.transcript !== '...') {
+                    voiceHistoryRef.current = [
+                        ...voiceHistoryRef.current,
+                        { role: 'user', parts: [{ text: data.transcript }] },
+                        { role: 'model', parts: [{ text: data.reply }] }
+                    ];
+                }
                 playHumanVoice(data.reply);
             } else {
                 startListeningLoop();
@@ -283,72 +1343,154 @@ export default function Chatbot() {
     }
 
     function stopDictation() {
+        dictationActiveRef.current = false;
+        if (dictationSilenceTimerRef.current) {
+            clearTimeout(dictationSilenceTimerRef.current);
+            dictationSilenceTimerRef.current = null;
+        }
         if (speechRecognitionRef.current) {
             try { speechRecognitionRef.current.stop(); } catch (e) {}
         }
         setIsDictating(false);
     }
 
+    // Restarts the "stop listening after a few seconds of silence" countdown.
+    // Called both when dictation starts (so saying nothing at all still times
+    // out) and on every speech result (so actively talking — including normal
+    // pauses between sentences — keeps resetting the clock instead of cutting
+    // the user off mid-thought).
+    const DICTATION_SILENCE_TIMEOUT_MS = 5000;
+    function armDictationSilenceTimer() {
+        if (dictationSilenceTimerRef.current) clearTimeout(dictationSilenceTimerRef.current);
+        dictationSilenceTimerRef.current = setTimeout(() => {
+            stopDictation();
+        }, DICTATION_SILENCE_TIMEOUT_MS);
+    }
+
     function startSpeechToText() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            appendMessage('Speech-to-text is not available in this browser.', 'bot');
+            appendMessage(t.speechToTextUnavailable, 'bot');
             return;
         }
 
         stopDictation();
         closeVoice();
 
+        // Phones (especially Chrome on Android) ignore `continuous: true`
+        // and instead deliver cumulative snapshots — each result is the
+        // whole sentence so far, not a new segment. Joining those, then
+        // auto-restarting when the utterance ends, is what produced
+        // "hello hello hello I hello I see yours how are you doing".
+        const isTouchDictation = window.matchMedia('(pointer: coarse)').matches || 'ontouchend' in window;
+
         const recog = new SpeechRecognition();
-        recog.lang = 'en-US';
-        recog.continuous = false;
+        recog.lang = document.documentElement.lang === 'ar' ? 'ar-SA' : 'en-US';
+        recog.continuous = !isTouchDictation;
         recog.interimResults = true;
-        recog.onstart = () => {
-            setIsDictating(true);
-            setVoiceState('listening');
-            speechBufferRef.current = '';
-            dictationBaseRef.current = input || '';
-        };
-        recog.onresult = (event) => {
-            let interim = '';
-            // collect final results into buffer and show interim separately
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const r = event.results[i];
-                const t = (r[0] && r[0].transcript) ? r[0].transcript : '';
-                if (r.isFinal) {
-                    speechBufferRef.current = (speechBufferRef.current ? speechBufferRef.current + ' ' : '') + t;
-                } else {
-                    interim = interim ? interim + ' ' + t : t;
+        recog.maxAlternatives = 1;
+        dictationActiveRef.current = true;
+        dictationFatalErrorRef.current = false;
+
+        function spokenFromEvent(event) {
+            const pieces = [];
+            for (let i = 0; i < event.results.length; i++) {
+                const text = (event.results[i][0] && event.results[i][0].transcript)
+                    ? event.results[i][0].transcript.trim()
+                    : '';
+                if (text) pieces.push({ text, isFinal: !!event.results[i].isFinal });
+            }
+            if (pieces.length === 0) return { spoken: '', isFinal: false };
+
+            const laterContainsEarlier = pieces.some((p, i) =>
+                i > 0 && pieces.slice(0, i).some((prev) =>
+                    p.text.toLowerCase().startsWith(prev.text.toLowerCase())
+                )
+            );
+            if (laterContainsEarlier || isTouchDictation) {
+                let best = pieces[0];
+                for (const p of pieces) {
+                    if (p.text.length >= best.text.length) best = p;
                 }
+                return { spoken: best.text, isFinal: best.isFinal };
             }
 
-            const base = dictationBaseRef.current || '';
-            const composed = (base + (speechBufferRef.current ? (base ? ' ' : '') + speechBufferRef.current : '') + (interim ? (speechBufferRef.current || base ? ' ' : '') + interim : '')).trim();
-            setInput(composed);
-            // auto-resize if textarea exists
-            try {
-                if (messageInputRef.current) {
-                    messageInputRef.current.style.height = 'auto';
-                    messageInputRef.current.style.height = messageInputRef.current.scrollHeight + 'px';
-                }
-            } catch (e) {}
+            const finals = pieces.filter((p) => p.isFinal).map((p) => p.text).join(' ');
+            const live = pieces.filter((p) => !p.isFinal).map((p) => p.text).join(' ');
+            return { spoken: [finals, live].filter(Boolean).join(' '), isFinal: live.length === 0 && finals.length > 0 };
+        }
+
+        recog.onstart = () => {
+            setIsDictating(true);
+            setVisualizerState('listening');
+            armDictationSilenceTimer();
         };
-        recog.onerror = () => {
-            setIsDictating(false);
-            setVoiceState('connecting');
+        recog.onresult = (event) => {
+            armDictationSilenceTimer();
+            const { spoken, isFinal } = spokenFromEvent(event);
+            speechBufferRef.current = spoken;
+            const composed = [dictationBaseRef.current, spoken].filter(Boolean).join(' ');
+            setInput(composed);
+            try { autoResizeMessageInput(); } catch (e) {}
+            // One-utterance-and-done on phones, same as WhatsApp/Gboard:
+            // the OS already ended the phrase, and restarting would repeat it.
+            if (isTouchDictation && isFinal && spoken) {
+                dictationActiveRef.current = false;
+                try { recog.stop(); } catch (e) {}
+            }
+        };
+        recog.onerror = (event) => {
+            const fatalErrors = ['not-allowed', 'audio-capture', 'service-not-allowed'];
+            if (fatalErrors.includes(event?.error)) {
+                dictationFatalErrorRef.current = true;
+                dictationActiveRef.current = false;
+                if (event.error === 'not-allowed') {
+                    appendMessage(t.micBlocked, 'bot');
+                } else if (event.error === 'audio-capture') {
+                    appendMessage(t.noMic, 'bot');
+                }
+            }
         };
         recog.onend = () => {
+            const isCurrentSession = speechRecognitionRef.current === recog;
+            if (!isCurrentSession) return;
+
+            const canRestart = dictationActiveRef.current && !dictationFatalErrorRef.current && !isTouchDictation;
+            if (canRestart) {
+                if (speechBufferRef.current) {
+                    dictationBaseRef.current = [dictationBaseRef.current, speechBufferRef.current].filter(Boolean).join(' ');
+                    speechBufferRef.current = '';
+                }
+                setTimeout(() => {
+                    const stillCurrent = speechRecognitionRef.current === recog;
+                    if (!stillCurrent || !dictationActiveRef.current || dictationFatalErrorRef.current) return;
+                    try {
+                        recog.start();
+                    } catch (e) {
+                        stopDictation();
+                    }
+                }, 150);
+                return;
+            }
+
+            if (dictationSilenceTimerRef.current) {
+                clearTimeout(dictationSilenceTimerRef.current);
+                dictationSilenceTimerRef.current = null;
+            }
+            dictationActiveRef.current = false;
             setIsDictating(false);
-            setVoiceState('connecting');
-            // ensure input is focused after dictation ends
+            setVisualizerState('connecting');
             try { messageInputRef.current?.focus(); } catch (e) {}
         };
 
         speechRecognitionRef.current = recog;
+        speechBufferRef.current = '';
+        dictationBaseRef.current = messageInputRef.current?.value || '';
         try {
             recog.start();
         } catch (e) {
             console.error('Speech recognition init error', e);
+            dictationActiveRef.current = false;
             setIsDictating(false);
         }
     }
@@ -357,22 +1499,34 @@ export default function Chatbot() {
         try {
             stopDictation();
             setVisualizerState('connecting');
+            isVoiceActiveRef.current = true;
             setIsVoiceActive(true);
             await initHardware();
             setTimeout(() => startListeningLoop(), 300);
         } catch (e) {
             console.error('Hardware access denied.', e);
+            isVoiceActiveRef.current = false;
             setIsVoiceActive(false);
             try { if (silenceDetectorRef.current) silenceDetectorRef.current.stop(); } catch (err) {}
         }
     }
 
     function closeVoice() {
+        isVoiceActiveRef.current = false;
         setIsVoiceActive(false);
         stopAudioEngine();
         try { if (silenceDetectorRef.current) silenceDetectorRef.current.stop(); } catch (e) {}
         const mr = mediaRecorderRef.current;
         if (mr && mr.state === 'recording') mr.stop();
+
+        // Closing voice mode previously left the microphone stream open, so the
+        // browser's "mic in use" indicator stayed on even though the overlay was
+        // closed. Release the actual hardware access; openVoice() re-requests it
+        // fresh next time.
+        if (micStreamRef.current) {
+            try { micStreamRef.current.getTracks().forEach(track => track.stop()); } catch (e) {}
+            micStreamRef.current = null;
+        }
     }
 
     function openChat() {
@@ -384,56 +1538,144 @@ export default function Chatbot() {
         if (isVoiceActive) {
             closeVoice();
         }
+        // Bug fix: dictation's recognizer uses `continuous: true` and
+        // auto-restarts itself from its own onend handler, so once started it
+        // never actually stops on its own — not even if the chat window is
+        // closed. Without this, the mic kept listening (and silently writing
+        // into the input box) in the background indefinitely, and reopening
+        // the widget later showed it still "Listening for speech…" even
+        // though the mic was never clicked in that session.
+        stopDictation();
+    }
+
+    function clearConversation() {
+        if (isVoiceActive) {
+            closeVoice();
+        }
+        stopDictation();
+        setMessages([{ role: 'bot', text: t.greeting, time: Date.now() }]);
+        conversationHistoryRef.current = [];
+        voiceHistoryRef.current = [];
+        setSelectedAttachment(null);
+        setInput('');
+        // setInput('') only clears the React-tracked value — it doesn't touch
+        // the textarea's own inline height, which the auto-grow handlers set
+        // directly on the DOM node. Without this, clearing a long, wrapped
+        // draft left the composer stuck at whatever tall height it had grown
+        // to, now empty, until the next keystroke recalculated it. Animate
+        // this one, since it's the "settle back down" case, not typing.
+        try { autoResizeMessageInput(true); } catch (e) {}
     }
 
     async function handleSendMessage(messageOverride = null) {
         const typedMessage = (messageOverride ?? input).trim();
+        const attachment = selectedAttachment;
         let finalMessage = typedMessage;
+        let attachmentBase64 = null;
 
-        if (selectedAttachment) {
-            const attachmentLabel = selectedAttachment.name;
-            const attachmentSize = Math.round(selectedAttachment.size / 1024);
+        if (attachment) {
+            const attachmentLabel = attachment.name;
+            const attachmentSize = Math.round(attachment.size / 1024);
+            // Keep a readable label in the visible transcript, but this is display-only
+            // now — the actual file bytes are sent separately below so Gemini can read
+            // the real contents, not just the filename.
             finalMessage = typedMessage
                 ? `${typedMessage}\n\n[Attachment: ${attachmentLabel} (${attachmentSize} KB)]`
                 : `Please review this attachment: ${attachmentLabel} (${attachmentSize} KB)`;
+
+            try {
+                attachmentBase64 = await readFileAsDataUrl(attachment);
+            } catch (e) {
+                console.error('Failed to read attachment', e);
+                appendMessage(t.attachmentReadFailed, 'bot');
+                return;
+            }
         }
 
         if (!finalMessage) return;
 
+        if (typedMessage.length > MAX_MESSAGE_LENGTH) {
+            appendMessage(t.messageTooLong(typedMessage.length, MAX_MESSAGE_LENGTH), 'bot');
+            return;
+        }
+
         appendMessage(finalMessage, 'user');
         setInput('');
+        // Same reasoning as clearConversation(): clearing the React state
+        // alone leaves a multi-line draft's grown textarea height in place,
+        // so the now-empty composer stays tall until something else happens
+        // to resize it (e.g. the next keystroke) instead of collapsing back
+        // down to a single line right away, like it should on send. Animate
+        // this one too, same "settle back down" case.
+        try { autoResizeMessageInput(true); } catch (e) {}
         setSelectedAttachment(null);
         setIsThinking(true);
+        playThinkingBlip();
 
-        const historyMessages = [...messages, { role: 'user', text: finalMessage }];
-        const history = historyMessages
-            .filter((msg, idx) => !(idx === 0 && msg.role === 'bot' && msg.text === initialBotGreeting))
-            .map(({ role, text }) => ({
-                role: role === 'bot' ? 'model' : 'user',
-                parts: [{ text }]
-            }));
+        // Snapshot before this turn. Only committed to conversationHistoryRef once
+        // we know the exchange actually succeeded.
+        const history = conversationHistoryRef.current;
+        // Even when Gemini answers almost instantly, popping the reply in
+        // immediately feels jarring/robotic. Keep the typing indicator up for
+        // at least this long so a reply always arrives with a brief, natural
+        // "thinking" beat — only the remaining time is waited, so slower
+        // replies aren't delayed any further than they already are.
+        const MIN_THINKING_MS = 1000;
+        const thinkingStartedAt = Date.now();
+        async function waitForMinThinkingTime() {
+            const elapsed = Date.now() - thinkingStartedAt;
+            if (elapsed < MIN_THINKING_MS) {
+                await new Promise(resolve => setTimeout(resolve, MIN_THINKING_MS - elapsed));
+            }
+        }
 
         try {
             const response = await fetch(`${backendUrl}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: finalMessage,
-                    history
+                    message: typedMessage || (attachment ? `Please review this attachment: ${attachment.name}` : ''),
+                    history,
+                    // Lets the backend default to Arabic when the site is set to
+                    // Arabic and the message itself doesn't clearly indicate a
+                    // different language, instead of only reacting after the
+                    // visitor has already typed in Arabic at least once.
+                    uiLanguage: language,
+                    ...(attachmentBase64 ? { attachmentBase64, attachmentMimeType: attachment.type || 'application/octet-stream' } : {})
                 })
             });
 
             const botReply = await response.text();
+            await waitForMinThinkingTime();
             if (!response.ok) {
                 console.error('Chat API error', response.status, botReply);
-                appendMessage('Sorry, the assistant could not respond right now.', 'bot');
+                // 400/413/429/504 responses now carry a specific, already
+                // user-friendly reason (bad input, rate-limited, Gemini's own quota
+                // exhausted, or a request that timed out) — show that directly
+                // instead of a generic message. Only a genuine, unexplained server
+                // error (500) falls back to the generic apology.
+                const message = response.status !== 500 && botReply
+                    ? botReply
+                    : t.noResponse;
+                appendMessage(message, 'bot');
                 return;
             }
 
-            appendMessage(botReply || 'Sorry, I could not generate a reply right now.', 'bot');
+            if (botReply) {
+                appendMessage(botReply, 'bot');
+                playReplyChime();
+                conversationHistoryRef.current = [
+                    ...history,
+                    { role: 'user', parts: [{ text: finalMessage }] },
+                    { role: 'model', parts: [{ text: botReply }] }
+                ];
+            } else {
+                appendMessage(t.noReplyGenerated, 'bot');
+            }
         } catch (error) {
             console.error('Chat request failed', error);
-            appendMessage('Sorry, I could not reach the assistant right now.', 'bot');
+            await waitForMinThinkingTime();
+            appendMessage(t.reachFailed, 'bot');
         } finally {
             setIsThinking(false);
         }
@@ -442,87 +1684,134 @@ export default function Chatbot() {
     return (
         <>
             <style>{css}</style>
-            {!isChatOpen && (
-                <button className="chat-toggle-button" onClick={openChat} title="Open SDRS chat">
-                    <span className="button-label">Talk to SDRS</span>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M7 10h10M7 14h7"/></svg>
+            {!chatMounted && showGreetingBubble && (
+                <div className={`chat-greeting-bubble ${bubbleClosing ? 'closing' : ''}`} onClick={openChatFromBubble}>
+                    <span className="bubble-sparkle bubble-sparkle-1">✦</span>
+                    <span className="bubble-sparkle bubble-sparkle-2">✦</span>
+                    <span className="bubble-sparkle bubble-sparkle-3">✦</span>
+                    <div className="bubble-avatar"><RoboticIcon size={26} idSuffix="bubble" /></div>
+                    <div className="bubble-copy">
+                        <strong>{t.bubbleTitle}</strong>
+                        <span>{t.bubbleBody}</span>
+                    </div>
+                    <button className="bubble-close" onClick={(e) => { e.stopPropagation(); dismissBubble(); }} aria-label={t.bubbleDismiss}>×</button>
+                </div>
+            )}
+            {!chatMounted && (
+                <button className="chat-toggle-button" onClick={openChat} title={t.toggleTitle}>
+                    <span className="button-label">{t.toggleLabel}</span>
+                    <RoboticIcon size={38} idSuffix="toggle" />
                 </button>
             )}
 
-            {isChatOpen && (
-                <div id="chat-container">
+            {chatMounted && (
+                <div id="chat-container" className={chatEntered ? 'chat-open' : ''} ref={chatContainerRef}>
                     <div id="chat-header">
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <div className="header-logo">SDRS</div>
-                            <div>SDRS AI Assistant</div>
+                        <div className="header-anim" aria-hidden="true">
+                            <div className="header-anim-grid" />
+                            <div className="header-anim-arcs" />
                         </div>
-                        <button className="chat-close-btn" onClick={hideChat} title="Close chat">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                    </div>
-
-                    <div className="quick-pills" aria-hidden={isDictating}>
-                        {['About SDRS', 'Services', 'Investment', 'Contact Us'].map((s, i) => (
-                            <button key={i} type="button" className="pill" onClick={() => { setInput(s); try { messageInputRef.current?.focus(); } catch (e) {} }}>
-                                {s}
+                        <div className="header-identity">
+                            <div className={`header-logo${chatEntered ? ' activate' : ''}`}><RoboticIcon size={40} idSuffix="header" animate /></div>
+                            <div className="header-copy">
+                                <div className="header-title"><span className="status-dot" />{t.headerTitle}</div>
+                                <div className="header-status">{t.headerStatus}</div>
+                            </div>
+                        </div>
+                        <div className="header-actions">
+                            <button className="chat-clear-btn" onClick={clearConversation} title={t.clearTitle} disabled={isThinking}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                             </button>
-                        ))}
+                            <button className="chat-close-btn" onClick={hideChat} title={t.closeTitle}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <div id="messages" ref={messagesRef}>
                         {messages.map((m, idx) => (
                             <div key={idx} className={`message-wrapper ${m.role}`}>
-                                <div className="message" dangerouslySetInnerHTML={m.role === 'bot' ? { __html: marked.parse(m.text) } : undefined}>
-                                    {m.role !== 'bot' ? m.text : null}
+                                {m.role === 'bot' ? (
+                                    <div className="message-row">
+                                        <div className="msg-avatar"><RoboticIcon size={22} idSuffix={`msg${idx}`} /></div>
+                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: sanitizeBotHtml(marked.parse(m.text)) }} />
+                                    </div>
+                                ) : (
+                                    <div className="message" dir="auto">{m.text}</div>
+                                )}
+                                <div className="timestamp">
+                                    {formatMessageTime(m.time)}
+                                    {m.role === 'user' && (
+                                        // WhatsApp-style sent/delivered ticks on the user's own messages
+                                        // only, same as WhatsApp/Messenger/Telegram: a single tick means
+                                        // "sent, still waiting on a reply"; a second, coloured tick means
+                                        // "delivered" — here, that the assistant has replied to it. Purely
+                                        // derived from whether a later message exists, no extra state to
+                                        // keep in sync.
+                                        <span className={`msg-ticks ${idx < messages.length - 1 ? 'delivered' : ''}`} aria-hidden="true">
+                                            <svg width="13" height="10" viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L11 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            {idx < messages.length - 1 && (
+                                                <svg width="13" height="10" viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L11 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            )}
+                                        </span>
+                                    )}
                                 </div>
-                                <div className="timestamp">{m.time}</div>
                             </div>
                         ))}
                         {isThinking && (
-                            <div className="message-wrapper bot">
-                                <div className="message typing-indicator" aria-live="polite">
-                                    <span className="typing-dot" />
-                                    <span className="typing-dot" />
-                                    <span className="typing-dot" />
+                            <div className="message-wrapper bot typing-wrapper">
+                                <div className="message-row">
+                                    <div className="msg-avatar"><RoboticIcon size={22} idSuffix="msgTyping" /></div>
+                                    <div className="message typing-indicator" aria-live="polite">
+                                        <span className="typing-dot" />
+                                        <span className="typing-dot" />
+                                        <span className="typing-dot" />
+                                    </div>
                                 </div>
-                                <div className="timestamp">Thinking…</div>
+                                <div className="timestamp">{t.thinkingLabel}</div>
                             </div>
                         )}
                         <div ref={endRef} />
                     </div>
 
-                    <div id="input-area">
-                        <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleAttachmentSelect} />
-                        <button className="icon-btn" title="Attach File" onClick={triggerFileUpload}>
+                    {messages.length <= 1 && (
+                        <div className="quick-pills" aria-hidden={isDictating}>
+                            {t.quickPills.map((s, i) => (
+                                <button key={i} type="button" className="pill" onClick={() => handleSendMessage(s)} disabled={isThinking}>
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div id="input-area" ref={inputAreaRef}>
+                        <input type="file" ref={fileInputRef} accept="image/*,application/pdf,text/plain" style={{ display: 'none' }} onChange={handleAttachmentSelect} />
+                        <button className="icon-btn" title={t.attachTitle} onClick={triggerFileUpload}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                         </button>
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div className="composer">
                             {selectedAttachment && (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 999, background: 'rgba(0, 51, 160, 0.08)', color: '#0033a0', fontSize: 12, maxWidth: '100%' }}>
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedAttachment.name}</span>
-                                    <button type="button" onClick={() => setSelectedAttachment(null)} style={{ marginLeft: 8, border: 'none', background: 'transparent', color: '#0033a0', cursor: 'pointer', padding: 0 }}>×</button>
+                                <div className="attachment-chip">
+                                    <span>{selectedAttachment.name}</span>
+                                    <button type="button" onClick={() => setSelectedAttachment(null)} aria-label={t.removeAttachment}>×</button>
                                 </div>
                             )}
                             <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
                                 setInput(e.target.value);
-                                try {
-                                    const el = messageInputRef.current;
-                                    if (el) {
-                                        el.style.height = 'auto';
-                                        el.style.height = el.scrollHeight + 'px';
-                                    }
-                                } catch (err) {}
+                                try { autoResizeMessageInput(); } catch (err) {}
+                            }} onFocus={() => {
+                                try { autoResizeMessageInput(); } catch (err) {}
                             }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} rows={1} placeholder={isThinking ? 'Assistant is thinking…' : isDictating ? 'Listening for speech…' : selectedAttachment ? 'Add a note and send' : 'Type a message...'} autoComplete="off" disabled={isThinking} />
+                            }} rows={1} dir="auto" placeholder={isThinking ? t.placeholderThinking : isDictating ? t.placeholderListening : selectedAttachment ? t.placeholderAttachment : t.placeholderDefault} autoComplete="off" disabled={isThinking} />
                         </div>
-                        <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title="Start Voice Mode" onClick={openVoice}>
+                        <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title={t.voiceTitle} onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>
                         </button>
-                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title="Voice to Text" onClick={startSpeechToText}>
+                        <button className={`icon-btn ${isDictating ? 'mic-active' : ''}`} title={t.micTitle} onClick={isDictating ? stopDictation : startSpeechToText}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                         </button>
                         <button id="send-btn" onClick={() => handleSendMessage()} disabled={isThinking}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
@@ -535,11 +1824,11 @@ export default function Chatbot() {
                                 <div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div>
                                 <div className="speaker-dot"></div>
                             </div>
-                            <div className="interrupt-hint" id="interrupt-hint-text">Tap to interrupt</div>
+                            <div className="interrupt-hint" id="interrupt-hint-text">{t.interruptHint}</div>
                         </div>
                         <div className="voice-controls">
                             <button id="close-voice-btn" className="voice-btn-circle" onClick={closeVoice}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                            <div id="voice-status-text">{voiceState === 'speaking' ? 'Speaking...' : voiceState === 'listening' ? 'Listening...' : voiceState === 'processing' ? 'Processing...' : 'Connecting...'}</div>
+                            <div id="voice-status-text">{voiceState === 'speaking' ? t.statusSpeaking : voiceState === 'listening' ? t.statusListening : voiceState === 'processing' ? t.statusProcessing : t.statusConnecting}</div>
                             <button className="voice-btn-circle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
                         </div>
                     </div>

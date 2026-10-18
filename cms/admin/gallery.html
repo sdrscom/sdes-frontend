@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Gallery</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <h1>Gallery</h1>
+    <p class="subtitle">Images shown on the public Facility Gallery page.</p>
+
+    <div class="card">
+      <h3 id="form-title">Add image</h3>
+      <form id="gallery-form">
+        <input type="hidden" id="edit-id" />
+
+        <div class="grid-2">
+          <div>
+            <label for="title">Title *</label>
+            <input type="text" id="title" required />
+          </div>
+          <div>
+            <label for="category">Category</label>
+            <input type="text" id="category" placeholder="e.g. Warehousing" />
+          </div>
+        </div>
+
+        <label for="caption">Caption</label>
+        <textarea id="caption" rows="3"></textarea>
+
+        <label for="image">Image <span id="image-required">*</span></label>
+        <input type="file" id="image" accept="image/*" />
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button type="submit" class="btn">Save image</button>
+          <button type="button" class="btn btn-secondary" id="cancel-edit" style="display:none;">Cancel</button>
+        </div>
+        <p class="form-error" id="form-error" style="display:none;"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Gallery items</h3>
+      <table>
+        <thead>
+          <tr><th></th><th>Title</th><th>Category</th><th></th></tr>
+        </thead>
+        <tbody id="gallery-rows"></tbody>
+      </table>
+      <p class="empty-msg" id="empty-msg" style="display:none;">No images yet.</p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let items = [];
+
+    async function loadGallery() {
+      const res = await apiFetch('/admin/api/gallery');
+      const data = await res.json();
+      items = data.data;
+      renderRows();
+    }
+
+    function renderRows() {
+      const tbody = document.getElementById('gallery-rows');
+      document.getElementById('empty-msg').style.display = items.length ? 'none' : 'block';
+      tbody.innerHTML = items
+        .map(
+          (item) => `
+        <tr>
+          <td>${item.image ? `<img class="thumb" src="${escapeHtml(item.image.url)}" />` : ''}</td>
+          <td>${escapeHtml(item.title)}</td>
+          <td>${item.category ? `<span class="pill">${escapeHtml(item.category)}</span>` : ''}</td>
+          <td class="actions-cell">
+            <button class="btn btn-sm btn-secondary" onclick="editItem(${item.id})">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteItem(${item.id})">Delete</button>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function editItem(id) {
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+      document.getElementById('form-title').textContent = 'Edit image';
+      document.getElementById('edit-id').value = item.id;
+      document.getElementById('title').value = item.title || '';
+      document.getElementById('category').value = item.category || '';
+      document.getElementById('caption').value = item.caption || '';
+      document.getElementById('image-required').style.display = 'none';
+      document.getElementById('cancel-edit').style.display = 'inline-flex';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetForm() {
+      document.getElementById('gallery-form').reset();
+      document.getElementById('edit-id').value = '';
+      document.getElementById('form-title').textContent = 'Add image';
+      document.getElementById('image-required').style.display = 'inline';
+      document.getElementById('cancel-edit').style.display = 'none';
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', resetForm);
+
+    async function deleteItem(id) {
+      if (!confirm('Delete this image?')) return;
+      await apiFetch(`/admin/api/gallery/${id}`, { method: 'DELETE' });
+      showToast('Image deleted');
+      loadGallery();
+    }
+
+    document.getElementById('gallery-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.style.display = 'none';
+
+      const id = document.getElementById('edit-id').value;
+      const imageFile = document.getElementById('image').files[0];
+      if (!id && !imageFile) {
+        errorEl.textContent = 'An image is required';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('title', document.getElementById('title').value);
+      fd.append('category', document.getElementById('category').value);
+      fd.append('caption', document.getElementById('caption').value);
+      if (imageFile) fd.append('image', imageFile);
+
+      const res = await apiFetch(id ? `/admin/api/gallery/${id}` : '/admin/api/gallery', {
+        method: id ? 'PUT' : 'POST',
+        body: fd,
+      });
+
+      if (res.ok) {
+        showToast(id ? 'Image updated' : 'Image added');
+        resetForm();
+        loadGallery();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        errorEl.textContent = data.error || 'Failed to save image';
+        errorEl.style.display = 'block';
+      }
+    });
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/gallery.html');
+        loadGallery();
+      }
+    })();
+  </script>
+</body>
+</html>

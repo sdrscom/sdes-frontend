@@ -3,24 +3,21 @@ import { Container, Warehouse, Car, Truck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "../../context/LanguageContext";
 import Pattern from "../../components/Pattern/Pattern";
+import { useMedia } from "../../cms/useMedia";
 // import GradientButton from "../../ui/GradientButton";
 
 const ServicesHero = () => {
-  const API_URL = import.meta.env.VITE_API_URL;
   const { t } = useTranslation();
   const { language } = useLanguage();
+  const media = useMedia();
 
   const [visible, setIsVisible] = useState(false);
   const [heroAnimated, setHeroAnimated] = useState<boolean>(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
-  const [heroImage, setHeroImage] = useState<string>("");
-  const [heroTitle, setHeroTitle] = useState<string>(
-    "Comprehensive Logistics & Bonded Zone Solutions"
-  );
-  const [heroDescription, setHeroDescription] = useState<string>(
-    "From terminal shuttling and cargo handling to customs clearance, vehicle inspection, and value-added distribution — SDES delivers seamless logistics inside the bonded zone."
-  );
+  const heroImage = media("services.heroImage");
+  const heroTitle = t("servicesHero.title");
+  const heroDescription = t("servicesHero.description");
 
   const toArabicNumber = (num: string): string => {
     if (language !== "ar") return num;
@@ -36,54 +33,6 @@ const ServicesHero = () => {
       })
       .join("");
   };
-
-  useEffect(() => {
-    const fetchHeroContent = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/services-text-collections?populate=*&locale=${language}`
-        );
-        const data = await res.json();
-
-        const content = data?.data?.[0];
-
-        if (content?.ServicesHeroTitle) {
-          setHeroTitle(content.ServicesHeroTitle);
-        }
-
-        if (content?.servicesHeroDescription) {
-          setHeroDescription(content.servicesHeroDescription);
-        }
-      } catch (err) {
-        console.error("Error fetching hero content:", err);
-      }
-    };
-
-    fetchHeroContent();
-  }, [API_URL, language]);
-
-  useEffect(() => {
-    const fetchHero = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/services-hero?populate=*`);
-        const data = await res.json();
-
-        const img = data?.data?.servicesHero;
-
-        const imageUrl = img?.formats?.large?.url || img?.url;
-
-        const fullUrl = imageUrl?.startsWith("http")
-          ? imageUrl
-          : `${API_URL}${imageUrl}`;
-
-        setHeroImage(fullUrl);
-      } catch (err) {
-        console.error("Error fetching hero image:", err);
-      }
-    };
-
-    fetchHero();
-  }, [API_URL]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 200);

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Users</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Users</h1>
+        <p class="subtitle">People who can sign in to this CMS.</p>
+      </div>
+    </div>
+
+    <div class="dash-cols">
+      <div class="card">
+        <h3>All users</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>User</th><th>Added</th><th></th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Add a user</h3>
+        <form id="add-form">
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="off" required />
+          <label for="password">Password (at least 8 characters)</label>
+          <input type="password" id="password" autocomplete="new-password" minlength="8" required />
+          <button class="btn" type="submit" style="margin-top:18px">Add user</button>
+          <p class="form-error" id="add-error" hidden></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    async function load() {
+      const res = await apiFetch('/admin/api/users');
+      const { data, currentUserId } = await res.json();
+      document.getElementById('rows').innerHTML = data
+        .map((u) => {
+          const me = Number(u.id) === Number(currentUserId);
+          return `
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${escapeHtml(u.username.slice(0, 2))}</span>
+              <strong>${escapeHtml(u.username)}</strong>${me ? '<span class="pill pill-success">You</span>' : ''}</div></td>
+            <td>${u.created_at ? new Date(u.created_at.replace(' ', 'T') + 'Z').toLocaleDateString() : ''}</td>
+            <td class="actions-cell">
+              <button class="btn btn-sm btn-secondary" data-pw="${u.id}" data-name="${escapeHtml(u.username)}">${icon('key')} Password</button>
+              ${me ? '' : `<button class="btn btn-sm btn-danger" data-del="${u.id}" data-name="${escapeHtml(u.username)}">${icon('trash')}</button>`}
+            </td>
+          </tr>`;
+        })
+        .join('');
+
+      document.querySelectorAll('[data-pw]').forEach((b) => (b.onclick = () => changePassword(b.dataset.pw, b.dataset.name)));
+      document.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => removeUser(b.dataset.del, b.dataset.name)));
+    }
+
+    function changePassword(id, name) {
+      const modal = openModal({
+        title: `New password for ${name}`,
+        small: true,
+        body: `<label for="new-pw" style="margin-top:0">Password (at least 8 characters)</label>
+               <input type="password" id="new-pw" autocomplete="new-password" />
+               <p class="form-error" id="pw-error" hidden></p>`,
+        footer: `<button class="btn btn-secondary" data-close>Cancel</button><button class="btn" id="pw-save">Update password</button>`,
+      });
+      const input = modal.el.querySelector('#new-pw');
+      input.focus();
+      modal.el.querySelector('#pw-save').onclick = async () => {
+        try {
+          await apiJson(`/admin/api/users/${id}/password`, 'PUT', { password: input.value });
+          modal.close();
+          showToast('Password updated');
+        } catch (err) {
+          const e = modal.el.querySelector('#pw-error');
+          e.textContent = err.message;
+          e.hidden = false;
+        }
+      };
+    }
+
+    async function removeUser(id, name) {
+      if (!(await confirmDialog(`Remove ${name}? They will no longer be able to sign in.`, { confirmLabel: 'Remove', danger: true }))) return;
+      const res = await apiFetch(`/admin/api/users/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.error || 'Could not remove user', true);
+      showToast('User removed');
+      load();
+    }
+
+    document.getElementById('add-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = document.getElementById('add-error');
+      err.hidden = true;
+      try {
+        await apiJson('/admin/api/users', 'POST', {
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        });
+        e.target.reset();
+        showToast('User added');
+        load();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    });
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/users.html');
+        load();
+      }
+    })();
+  </script>
+</body>
+</html>

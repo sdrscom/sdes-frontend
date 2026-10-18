@@ -15,16 +15,17 @@ import {
 import type { LucideIcon } from "lucide-react";
 import Pattern from "../../components/Pattern/Pattern";
 import GradientButton from "../../ui/GradientButton";
-import axios from "axios";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "../../context/LanguageContext";
+import { useMedia } from "../../cms/useMedia";
+import type { FacilityContent } from "../../locales/translations";
 
 type IconComponent = LucideIcon;
 
 interface Facility {
   icon: IconComponent;
   name: string;
-  area: number;
+  area?: number;
   image: string;
 }
 
@@ -34,21 +35,21 @@ interface AnimatedCounterProps {
   unit?: string;
 }
 
+// CMS fields are free text ("12,000 m²"); blank means "don't show".
+const toCount = (value: string) => {
+  const n = Number(String(value || "").replace(/[^\d.]/g, ""));
+  return value && Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
 const FacilitiesOverview: React.FC = () => {
   const { t } = useTranslation();
   const { language } = useLanguage();
-  const API_URL = import.meta.env.VITE_API_URL;
+  const media = useMedia();
 
-  const [heroImage, setHeroImage] = useState<string>("");
-  const [heroTitle, setHeroTitle] = useState<string>("");
-  const [heroDescription, setHeroDescription] = useState<string>("");
-  const [facilities, setFacilities] = useState<Facility[]>([]);
-  const [storageImages, setStorageImages] = useState<{ [key: string]: string }>(
-    {}
-  );
-  const [operationsImages, setOperationsImages] = useState<{
-    [key: string]: string;
-  }>({});
+  const heroImage = media("facilities.heroImage");
+  const heroTitle = t("facilities.heroTitle");
+  const heroDescription = t("facilities.heroDescription");
+  const totalArea = toCount(t("facilities.totalArea"));
   const [isVisible, setIsVisible] = useState<boolean>(false);
   const [heroAnimated, setHeroAnimated] = useState<boolean>(false);
 
@@ -77,151 +78,24 @@ const FacilitiesOverview: React.FC = () => {
     "منطقة متعددة الاستخدامات": LayoutGrid,
   };
 
-  const categoryMap: {
-    [key: string]: "Storage" | "Specialized" | "Operations" | "Support";
-  } = {
-    "Closed Warehouses": "Storage",
-    "المستودعات المغلقة": "Storage",
-    "AutoZone Area": "Storage",
-    "منطقة المركبات": "Storage",
-    "Shed Area": "Storage",
-    "منطقة الهنغارات": "Storage",
-    "Cold Chamber": "Specialized",
-    "الغرفة الباردة": "Specialized",
-    "Chemical Storage Area": "Specialized",
-    "تخزين المواد الكيميائية": "Specialized",
-    "Containers Stacking Area": "Operations",
-    "رصّ الحاويات": "Operations",
-    "Transit Area": "Operations",
-    "منطقة العبور": "Operations",
-    "Inspection Shed Area": "Operations",
-    "منطقة التفتيش": "Operations",
-    "Truck Parking Area": "Support",
-    "مواقف الشاحنات": "Support",
-    "Multipurpose Area": "Support",
-    "منطقة متعددة الاستخدامات": "Support",
+  const toFacilities = (key: string): Facility[] => {
+    const items = t(key, { returnObjects: true });
+    if (!Array.isArray(items)) return [];
+    return (items as FacilityContent[])
+      .filter((item) => item?.name)
+      .map((item) => ({
+        icon: iconMap[item.name.trim()] || Building2,
+        name: item.name.trim(),
+        area: toCount(item.area),
+        image: item.image || "",
+      }));
   };
 
-  const imageNameMap: { [key: string]: string } = {
-    "المستودعات المغلقة": "Closed Warehouses",
-    "منطقة المركبات": "AutoZone Area",
-    "منطقة الهنغارات": "Shed Area",
-    "الغرفة الباردة": "Cold Chamber",
-    "تخزين المواد الكيميائية": "Chemical Storage Area",
-    "رصّ الحاويات": "Containers Stacking Area",
-    "منطقة العبور": "Transit Area",
-    "منطقة التفتيش": "Inspection Shed Area",
-    "مواقف الشاحنات": "Truck Parking Area",
-    "منطقة متعددة الاستخدامات": "Multipurpose Area",
-  };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await axios.get(
-          `${API_URL}/api/facilities-text-collections?populate=*&locale=en`
-        );
-
-        const data = response.data.data[0];
-        if (!data) return;
-
-        const arabicData = data.localizations?.find(
-          (loc: any) => loc.locale === "ar"
-        );
-
-        if (language === "ar" && arabicData) {
-          setHeroTitle(arabicData.FacilitiesHeroTitle);
-          setHeroDescription(arabicData.FacilitiesHeroDescription);
-
-          if (arabicData.FacilitiesNumbers) {
-            const blocks = arabicData.FacilitiesNumbers.trim().split("\n\n");
-            const facilitiesList: Facility[] = blocks.map((block: string) => {
-              const [name, area] = block.split("\n");
-              return {
-                icon: iconMap[name.trim()],
-                name: name.trim(),
-                area: parseInt(area.replace(/[^\d]/g, ""), 10),
-                image: "",
-              };
-            });
-            setFacilities(facilitiesList);
-          }
-        } else {
-          setHeroTitle(data.FacilitiesHeroTitle);
-          setHeroDescription(data.FacilitiesHeroDescription);
-
-          if (data.FacilitiesNumbers) {
-            const blocks = data.FacilitiesNumbers.trim().split("\n\n");
-            const facilitiesList: Facility[] = blocks.map((block: string) => {
-              const [name, area] = block.split("\n");
-              return {
-                icon: iconMap[name.trim()],
-                name: name.trim(),
-                area: parseInt(area.replace(/[^\d]/g, ""), 10),
-                image: "",
-              };
-            });
-            setFacilities(facilitiesList);
-          }
-        }
-
-        if (data.StorageSpecializedImages) {
-          const images: { [key: string]: string } = {};
-          data.StorageSpecializedImages.forEach((img: any) => {
-            let name = img.name.replace(/\.(png|jpg|jpeg)$/i, "");
-            if (name === "Auto Zone") name = "AutoZone Area";
-            const url =
-              img.formats?.large?.url || img.formats?.medium?.url || img.url;
-            const fullUrl = url?.startsWith("http") ? url : `${API_URL}${url}`;
-            images[name] = fullUrl;
-          });
-          setStorageImages(images);
-        }
-
-        if (data.OperationsSupportImages) {
-          const images: { [key: string]: string } = {};
-          data.OperationsSupportImages.forEach((img: any) => {
-            let name = img.name.replace(/\.(png|jpg|jpeg)$/i, "");
-            if (name === "Transit") name = "Transit Area";
-            if (name === "Multipurpose area") name = "Multipurpose Area";
-            const url =
-              img.formats?.large?.url || img.formats?.medium?.url || img.url;
-            const fullUrl = url?.startsWith("http") ? url : `${API_URL}${url}`;
-            images[name] = fullUrl;
-          });
-          setOperationsImages(images);
-        }
-      } catch (error) {
-        console.error("Error fetching facilities data:", error);
-      }
-    };
-
-    fetchData();
-  }, [API_URL, language]);
-
-  useEffect(() => {
-    const fetchHeroImage = async () => {
-      try {
-        const response = await axios.get(
-          `${API_URL}/api/facilities-hero?populate=*`
-        );
-        const data = response.data.data;
-        if (data?.facilitiesHero) {
-          const media = data.facilitiesHero;
-          const url =
-            media.formats?.large?.url ||
-            media.formats?.medium?.url ||
-            media.url;
-          const fullUrl = url?.startsWith("http") ? url : `${API_URL}${url}`;
-          setHeroImage(fullUrl);
-        }
-      } catch (error) {
-        console.error("Error fetching hero image:", error);
-      }
-    };
-
-    fetchHeroImage();
-  }, [API_URL]);
+  // [category title key, facilities] for the two cards.
+  const categories: [string, Facility[]][] = [
+    ["storageSpecialized", toFacilities("facilities.storageItems")],
+    ["operationsSupport", toFacilities("facilities.operationsItems")],
+  ];
 
   useEffect(() => {
     setHeroAnimated(true);
@@ -277,23 +151,12 @@ const FacilitiesOverview: React.FC = () => {
     );
   };
 
-  const getFacilityImage = (facilityName: string, category: string): string => {
-    const englishName =
-      language === "ar" ? imageNameMap[facilityName] : facilityName;
-
-    if (category === "Storage" || category === "Specialized") {
-      return storageImages[englishName] || "";
-    } else {
-      return operationsImages[englishName] || "";
-    }
-  };
-
   return (
     <section className="min-h-screen bg-mainBg">
       <div
         className="bg-cover bg-center pt-28 pb-44 lg:py-28 relative overflow-hidden flex items-center justify-center min-h-screen"
         style={{
-          backgroundImage: `url(${heroImage})`,
+          backgroundImage: heroImage ? `url(${heroImage})` : "none",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
@@ -403,7 +266,7 @@ const FacilitiesOverview: React.FC = () => {
                 <span className="inline-block whitespace-nowrap">
                   {isVisible ? (
                     <AnimatedCounter
-                      end={351000}
+                      end={totalArea ?? 0}
                       unit={language === "ar" ? " م²" : "m²"}
                       duration={2500}
                     />
@@ -474,15 +337,8 @@ const FacilitiesOverview: React.FC = () => {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-14">
-          {["Storage & Specialized", "Operations & Support"].map(
-            (categoryName, catIndex) => {
-              const categoryFacilities = facilities.filter((f) => {
-                const category = categoryMap[f.name];
-                return categoryName === "Storage & Specialized"
-                  ? category === "Storage" || category === "Specialized"
-                  : category === "Operations" || category === "Support";
-              });
-
+          {categories.map(
+            ([categoryKey, categoryFacilities], catIndex) => {
               return (
                 <div
                   key={catIndex}
@@ -493,24 +349,14 @@ const FacilitiesOverview: React.FC = () => {
                     <Pattern />
                   </div>
                   <h4 className="relative text-2xl font-bold mb-8 text-center text-white tracking-wide z-10">
-                    {t(
-                      `facilities.categories.${
-                        catIndex === 0
-                          ? "storageSpecialized"
-                          : "operationsSupport"
-                      }`
-                    )}
+                    {t(`facilities.categories.${categoryKey}`)}
                   </h4>
 
                   <div className="relative z-10 grid gap-6 grid-cols-1 lg:grid-cols-2">
                     {categoryFacilities.map((facility, index, arr) => {
                       const Icon = facility.icon;
                       const isLast = index === arr.length - 1;
-                      const category = categoryMap[facility.name];
-                      const facilityImage = getFacilityImage(
-                        facility.name,
-                        category
-                      );
+                      const facilityImage = facility.image;
 
                       return (
                         <div
@@ -569,25 +415,27 @@ const FacilitiesOverview: React.FC = () => {
                               {facility.name}
                             </h3>
 
-                            <div
-                              className="text-3xl sm:text-4xl font-bold mb-4"
-                              style={{
-                                background:
-                                  "linear-gradient(135deg, #F27141 0%, #B82227 100%)",
-                                WebkitBackgroundClip: "text",
-                                WebkitTextFillColor: "transparent",
-                              }}
-                            >
-                              {isVisible ? (
-                                <AnimatedCounter
-                                  end={facility.area}
-                                  unit={language === "ar" ? " م²" : "m²"}
-                                  duration={2000}
-                                />
-                              ) : (
-                                "0"
-                              )}
-                            </div>
+                            {facility.area !== undefined && (
+                              <div
+                                className="text-3xl sm:text-4xl font-bold mb-4"
+                                style={{
+                                  background:
+                                    "linear-gradient(135deg, #F27141 0%, #B82227 100%)",
+                                  WebkitBackgroundClip: "text",
+                                  WebkitTextFillColor: "transparent",
+                                }}
+                              >
+                                {isVisible ? (
+                                  <AnimatedCounter
+                                    end={facility.area}
+                                    unit={language === "ar" ? " م²" : "m²"}
+                                    duration={2000}
+                                  />
+                                ) : (
+                                  "0"
+                                )}
+                              </div>
+                            )}
 
                             <div
                               className="h-1 rounded-full"

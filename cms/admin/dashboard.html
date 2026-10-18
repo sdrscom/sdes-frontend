@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Dashboard</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Dashboard</h1>
+        <p class="subtitle">Welcome back, <span id="welcome-user"></span>. Here's what's on the site.</p>
+      </div>
+      <div class="page-actions">
+        <a class="btn btn-accent" href="/pages.html" id="edit-pages-btn"></a>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="stats">
+      <div class="skeleton" style="height:80px"></div>
+      <div class="skeleton" style="height:80px"></div>
+      <div class="skeleton" style="height:80px"></div>
+      <div class="skeleton" style="height:80px"></div>
+    </div>
+
+    <div class="dash-cols">
+      <div class="card">
+        <h3>Website pages</h3>
+        <div id="page-list"><div class="skeleton" style="height:200px"></div></div>
+      </div>
+      <div class="card">
+        <h3>Recent page edits</h3>
+        <div id="recent"><div class="skeleton" style="height:200px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    document.getElementById('edit-pages-btn').innerHTML = `${icon('pages')} Edit website pages`;
+
+    async function load() {
+      const [statsRes, pagesRes] = await Promise.all([apiFetch('/admin/api/stats'), apiFetch('/admin/api/pages')]);
+      const stats = await statsRes.json();
+      const { data: pages } = await pagesRes.json();
+      const titles = Object.fromEntries(pages.map((p) => [p.slug, p.title]));
+
+      const tiles = [
+        { n: pages.length, label: 'Website pages', icon: 'pages', href: '/pages.html', orange: true },
+        { n: stats.news, label: 'News articles', icon: 'news', href: '/news.html' },
+        { n: stats.gallery, label: 'Gallery images', icon: 'gallery', href: '/gallery.html' },
+        { n: stats.jobs, label: 'Job postings', icon: 'careers', href: '/careers.html' },
+        { n: stats.applications, label: 'Applications', icon: 'applications', href: '/applications.html' },
+        { n: stats.files, label: 'Files', icon: 'files', href: '/files.html' },
+      ];
+      document.getElementById('stats').innerHTML = tiles
+        .map(
+          (t) => `
+          <a class="stat" href="${t.href}">
+            <div class="stat-icon${t.orange ? ' orange' : ''}">${icon(t.icon)}</div>
+            <div><strong>${t.n}</strong><span>${t.label}</span></div>
+          </a>`
+        )
+        .join('');
+
+      document.getElementById('page-list').innerHTML = pages
+        .map(
+          (p) => `
+          <div class="list-row">
+            <div class="stat-icon">${icon('pages')}</div>
+            <div class="grow">
+              <strong>${escapeHtml(p.title)}</strong>
+              <small>${p.sections.length} section${p.sections.length === 1 ? '' : 's'}${p.mediaCount ? ` · ${p.mediaCount} images` : ''} · ${
+                p.lastUpdated ? 'edited ' + timeAgo(p.lastUpdated.at) : 'using site defaults'
+              }</small>
+            </div>
+            <a class="btn btn-sm btn-secondary" href="/page-edit.html?page=${p.slug}">Edit</a>
+          </div>`
+        )
+        .join('');
+
+      document.getElementById('recent').innerHTML = stats.recentEdits.length
+        ? stats.recentEdits
+            .map(
+              (r) => `
+              <div class="list-row">
+                <div class="avatar">${escapeHtml((r.created_by || '?').slice(0, 2))}</div>
+                <div class="grow">
+                  <strong>${escapeHtml(titles[r.page] || r.page)}</strong>
+                  <small>${escapeHtml(r.note || 'Saved changes')} · ${escapeHtml(r.created_by || '')} · ${timeAgo(r.created_at)}</small>
+                </div>
+              </div>`
+            )
+            .join('')
+        : '<p class="empty-msg">No page edits yet. Open <a href="/pages.html">Pages</a> to start.</p>';
+    }
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/dashboard.html');
+        document.getElementById('welcome-user').textContent = user.username;
+        load();
+      }
+    })();
+  </script>
+</body>
+</html>

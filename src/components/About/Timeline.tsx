@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Pattern from "../../components/Pattern/Pattern";
 import { useLanguage } from "../../context/LanguageContext";
@@ -11,10 +11,9 @@ import image2013 from "../../assets/Location/2013.png";
 import image2015 from "../../assets/Location/2015.png";
 import image2022 from "../../assets/Location/2022.png";
 import image2025 from "../../assets/Location/2025.png";
+import { useMedia } from "../../cms/useMedia";
 
 // Constants
-const API_URL = import.meta.env.VITE_API_URL;
-
 const images = [
   image2005,
   image2009,
@@ -25,16 +24,13 @@ const images = [
   image2025,
 ];
 
-// Types
-type TimelineStats = {
-  [year: string]: {
-    title: string;
-    description: string;
-    warehouses: number;
-    teus: number;
-  };
+// CMS fields are free text ("1,200"); blank means "don't show".
+const toCount = (value: string) => {
+  const n = Number(String(value || "").replace(/[^\d.]/g, ""));
+  return value && Number.isFinite(n) ? n : undefined;
 };
 
+// Types
 type TimelineEvent = {
   year: number;
   title: string;
@@ -214,45 +210,25 @@ const SDESStoryline: React.FC = () => {
   const { language } = useLanguage();
   const isRTL = language === "ar";
   const headerTranslations = translations[language].sdesStoryline.header;
+  const cmsEvents = translations[language].sdesStoryline.events.filter((e) => e.title);
+  const media = useMedia();
+  const imageAt = (index: number) =>
+    media(`about.timeline.${index}`, images[index % images.length]);
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [timelineStats, setTimelineStats] = useState<TimelineStats>({});
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch timeline API
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await fetch(
-          `${API_URL}/api/timelinenumbers?populate=*&locale=${language}`
-        );
-        const data = await response.json();
+  const timelineEvents: TimelineEvent[] = cmsEvents.map((e, index) => ({
+    year: parseInt(e.year) || 0,
+    title: e.title,
+    description: e.description,
+    imagePath: e.image || imageAt(index),
+    imageAlt: `Image ${e.year}`,
+    warehouses: toCount(e.warehouses),
+    teus: toCount(e.teus),
+  }));
 
-        if (data.data?.[0]?.Timeline) {
-          setTimelineStats(data.data[0].Timeline);
-        }
-      } catch (error) {
-        console.error("Error fetching timeline stats:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchStats();
-  }, [language]);
-
-  // Map timeline API
-  const timelineEvents: TimelineEvent[] = Object.entries(timelineStats).map(
-    ([year, data]: [string, any], index) => ({
-      year: parseInt(year),
-      title: data.title || "",
-      description: data.description || "",
-      imagePath: images[index],
-      imageAlt: `Image ${year}`,
-      warehouses: data.warehouses,
-      teus: data.teus,
-    })
-  );
+  // Nothing entered in the CMS yet: hide the section instead of an empty frame.
+  if (!timelineEvents.length) return null;
 
   return (
     <section
@@ -273,34 +249,27 @@ const SDESStoryline: React.FC = () => {
           </h2>
         </div>
 
-        {/* Loading State */}
-        {isLoading ? (
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white" />
-          </div>
-        ) : (
-          <div className="relative">
-            {/* Timeline Line */}
-            <div
-              className="hidden md:block absolute left-1/2 transform -translate-x-1/2 h-full w-[3px] z-0"
-              style={{
-                background:
-                  "linear-gradient(to bottom, #F27141, #B82227, #262F61)",
-              }}
-            />
+        <div className="relative">
+          {/* Timeline Line */}
+          <div
+            className="hidden md:block absolute left-1/2 transform -translate-x-1/2 h-full w-[3px] z-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, #F27141, #B82227, #262F61)",
+            }}
+          />
 
-            {/* Timeline Events */}
-            {timelineEvents.map((event, i) => (
-              <TimelineItem
-                key={event.year}
-                {...event}
-                isLeft={i % 2 === 0}
-                onImageClick={setSelectedImage}
-                isRTL={isRTL}
-              />
-            ))}
-          </div>
-        )}
+          {/* Timeline Events */}
+          {timelineEvents.map((event, i) => (
+            <TimelineItem
+              key={i}
+              {...event}
+              isLeft={i % 2 === 0}
+              onImageClick={setSelectedImage}
+              isRTL={isRTL}
+            />
+          ))}
+        </div>
 
         <div className="w-full h-1 bg-white/10 rounded-full mt-10" />
       </div>

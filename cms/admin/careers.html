@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Careers</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <h1>Careers</h1>
+    <p class="subtitle">Job postings shown on the public Careers page.</p>
+
+    <div class="card">
+      <h3 id="form-title">Add job posting</h3>
+      <form id="job-form">
+        <input type="hidden" id="edit-id" />
+
+        <div class="grid-2">
+          <div>
+            <label for="title">Job title *</label>
+            <input type="text" id="title" required />
+          </div>
+          <div>
+            <label for="department">Department</label>
+            <input type="text" id="department" placeholder="e.g. Operations" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="locationType">Location type</label>
+            <select id="locationType">
+              <option value="On-site">On-site</option>
+              <option value="Hybrid">Hybrid</option>
+              <option value="Remote">Remote</option>
+            </select>
+          </div>
+          <div>
+            <label for="countryCity">Country / City</label>
+            <input type="text" id="countryCity" placeholder="e.g. Jeddah, Saudi Arabia" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="jobType">Job type</label>
+            <select id="jobType">
+              <option value="Full-Time">Full-Time</option>
+              <option value="Contract">Contract</option>
+              <option value="Part-Time">Part-Time</option>
+            </select>
+          </div>
+          <div>
+            <label for="experienceLevel">Experience level</label>
+            <input type="text" id="experienceLevel" placeholder="e.g. Mid-level" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="salaryRange">Salary range (optional)</label>
+            <input type="text" id="salaryRange" />
+          </div>
+          <div>
+            <label for="locale">Language</label>
+            <select id="locale">
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="description">Description</label>
+        <textarea id="description" rows="5"></textarea>
+
+        <label for="requirements">Requirements (one per line)</label>
+        <textarea id="requirements" rows="5"></textarea>
+
+        <label for="publishedAt">Published date</label>
+        <input type="date" id="publishedAt" style="max-width:220px;" />
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="isFeatured" />
+          <label for="isFeatured" style="margin:0;">Featured posting</label>
+        </div>
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button type="submit" class="btn">Save job</button>
+          <button type="button" class="btn btn-secondary" id="cancel-edit" style="display:none;">Cancel</button>
+        </div>
+        <p class="form-error" id="form-error" style="display:none;"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Job postings</h3>
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Department</th><th>Lang</th><th>Featured</th><th></th></tr>
+        </thead>
+        <tbody id="job-rows"></tbody>
+      </table>
+      <p class="empty-msg" id="empty-msg" style="display:none;">No job postings yet.</p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let items = [];
+
+    async function loadJobs() {
+      const res = await apiFetch('/admin/api/jobs');
+      const data = await res.json();
+      items = data.data;
+      renderRows();
+    }
+
+    function renderRows() {
+      const tbody = document.getElementById('job-rows');
+      document.getElementById('empty-msg').style.display = items.length ? 'none' : 'block';
+      tbody.innerHTML = items
+        .map(
+          (item) => `
+        <tr>
+          <td>${escapeHtml(item.title)}</td>
+          <td>${escapeHtml(item.department || '')}</td>
+          <td><span class="pill">${item.locale === 'ar' ? 'AR' : 'EN'}</span></td>
+          <td>${item.is_featured ? '★' : ''}</td>
+          <td class="actions-cell">
+            <button class="btn btn-sm btn-secondary" onclick="editItem(${item.id})">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteItem(${item.id})">Delete</button>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function editItem(id) {
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+      document.getElementById('form-title').textContent = 'Edit job posting';
+      document.getElementById('edit-id').value = item.id;
+      document.getElementById('title').value = item.title || '';
+      document.getElementById('department').value = item.department || '';
+      document.getElementById('locationType').value = item.location_type || 'On-site';
+      document.getElementById('countryCity').value = item.country_city || '';
+      document.getElementById('jobType').value = item.job_type || 'Full-Time';
+      document.getElementById('experienceLevel').value = item.experience_level || '';
+      document.getElementById('salaryRange').value = item.salary_range || '';
+      document.getElementById('locale').value = item.locale || 'en';
+      document.getElementById('description').value = item.description || '';
+      document.getElementById('requirements').value = item.requirements || '';
+      document.getElementById('publishedAt').value = item.publishedAt ? item.publishedAt.slice(0, 10) : '';
+      document.getElementById('isFeatured').checked = !!item.is_featured;
+      document.getElementById('cancel-edit').style.display = 'inline-flex';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetForm() {
+      document.getElementById('job-form').reset();
+      document.getElementById('edit-id').value = '';
+      document.getElementById('form-title').textContent = 'Add job posting';
+      document.getElementById('cancel-edit').style.display = 'none';
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', resetForm);
+
+    async function deleteItem(id) {
+      if (!confirm('Delete this job posting?')) return;
+      await apiFetch(`/admin/api/jobs/${id}`, { method: 'DELETE' });
+      showToast('Job posting deleted');
+      loadJobs();
+    }
+
+    document.getElementById('job-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.style.display = 'none';
+
+      const id = document.getElementById('edit-id').value;
+      const publishedAt = document.getElementById('publishedAt').value;
+
+      const payload = {
+        title: document.getElementById('title').value,
+        department: document.getElementById('department').value,
+        locationType: document.getElementById('locationType').value,
+        countryCity: document.getElementById('countryCity').value,
+        jobType: document.getElementById('jobType').value,
+        experienceLevel: document.getElementById('experienceLevel').value,
+        salaryRange: document.getElementById('salaryRange').value,
+        locale: document.getElementById('locale').value,
+        description: document.getElementById('description').value,
+        requirements: document.getElementById('requirements').value,
+        isFeatured: document.getElementById('isFeatured').checked,
+        publishedAt: publishedAt ? new Date(publishedAt).toISOString() : undefined,
+      };
+
+      const res = await apiFetch(id ? `/admin/api/jobs/${id}` : '/admin/api/jobs', {
+        method: id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        showToast(id ? 'Job updated' : 'Job created');
+        resetForm();
+        loadJobs();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        errorEl.textContent = data.error || 'Failed to save job';
+        errorEl.style.display = 'block';
+      }
+    });
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/careers.html');
+        loadJobs();
+      }
+    })();
+  </script>
+</body>
+</html>

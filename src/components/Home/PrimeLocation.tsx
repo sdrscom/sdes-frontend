@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Pattern from "../Pattern/Pattern";
@@ -7,40 +7,22 @@ import { CheckCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "../../context/LanguageContext";
 import PrimeLocationImage from "../../assets/Picture3.png";
+import { useMedia } from "../../cms/useMedia";
 
 gsap.registerPlugin(ScrollTrigger);
 
-const API_URL = import.meta.env.VITE_API_URL;
-
 export default function PrimeLocation() {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const { language } = useLanguage();
+  const media = useMedia();
 
-  const [primeText, setPrimeText] = useState("");
+  const description = t("primeLocation.description");
 
   const googleMapsLink =
     "https://www.google.com/maps/@26.4843881,50.1959136,14z";
-
-  useEffect(() => {
-    const fetchText = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/home-text-collections?populate=*&locale=${i18n.language}`
-        );
-        const data = await res.json();
-
-        const rawText = data?.data?.[0]?.PrimeLocation || "";
-        setPrimeText(rawText);
-      } catch (error) {
-        console.error("Error fetching Prime Location text:", error);
-      }
-    };
-
-    fetchText();
-  }, [i18n.language]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -129,7 +111,7 @@ export default function PrimeLocation() {
             className="text-sm sm:text-base md:text-lg lg:text-xl leading-relaxed mb-6 sm:mb-7 md:mb-8 max-w-full lg:max-w-xl font-light"
             style={{ color: "#E8EAED" }}
           >
-            {primeText}
+            {description}
           </p>
 
           <div className="flex flex-wrap gap-2 md:gap-3 mb-6 sm:mb-7 md:mb-8">
@@ -216,7 +198,7 @@ export default function PrimeLocation() {
                 className="block w-full group cursor-pointer"
               >
                 <img
-                  src={PrimeLocationImage}
+                  src={media("home.primeLocationImage", PrimeLocationImage)}
                   alt="SDES Location Map"
                   className="w-full h-auto max-h-[50vh] sm:max-h-[55vh] md:max-h-[60vh] lg:max-h-[65vh] xl:max-h-[70vh] object-contain transition-transform duration-300 group-hover:scale-[1.02] rounded-xl sm:rounded-2xl shadow-2xl mx-auto"
                   style={{

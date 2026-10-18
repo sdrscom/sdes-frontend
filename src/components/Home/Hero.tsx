@@ -1,55 +1,13 @@
-import { useEffect, useState } from "react";
 import Pattern from "../Pattern/Pattern";
 import { useTranslation } from "react-i18next";
+import { useMedia } from "../../cms/useMedia";
 
 export default function Hero() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const media = useMedia();
 
-  const [videoUrl, setVideoUrl] = useState("");
-  const [heroTitle, setHeroTitle] = useState("");
-
-  const API_URL = import.meta.env.VITE_API_URL;
-
-  useEffect(() => {
-    const fetchVideo = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/home-hero?populate=*`);
-        const data = await res.json();
-
-        const videoData = data?.data?.homeHero;
-
-        if (videoData?.url) {
-          const fullUrl = videoData.url.startsWith("http")
-            ? videoData.url
-            : `${API_URL}${videoData.url}`;
-
-          setVideoUrl(fullUrl);
-        }
-      } catch (error) {
-        console.log("Error fetching video:", error);
-      }
-    };
-
-    const fetchHeroTitle = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/home-text-collections?locale=${i18n.language}`
-        );
-
-        const data = await res.json();
-        const titleData = data?.data?.[0]?.HomeHeroTitle;
-
-        if (titleData) {
-          setHeroTitle(titleData);
-        }
-      } catch (error) {
-        console.log("Error fetching hero title:", error);
-      }
-    };
-
-    fetchVideo();
-    fetchHeroTitle();
-  }, [API_URL, i18n.language]);
+  const video = media("home.heroVideo");
+  const title = t("hero.title");
 
   return (
     <section className="">
@@ -69,19 +27,20 @@ export default function Hero() {
       `}</style>
 
       <div className="relative min-h-screen h-screen flex items-center justify-center overflow-hidden">
-        {videoUrl ? (
+        {video ? (
           <video
+            key={video}
             className="absolute inset-0 w-full h-full object-cover"
             autoPlay
             muted
             loop
             playsInline
           >
-           <source src={videoUrl} type="video/mp4" />
+           <source src={video} type="video/mp4" />
           </video>
         ) : (
           <img
-            src="/hero-bg.jpg"
+            src={media("home.heroImage", "/hero-bg2.jpg")}
             alt="Hero Background"
             className="absolute inset-0 w-full h-full object-cover"
           />
@@ -103,17 +62,17 @@ export default function Hero() {
               {t("hero.welcome")}
             </h1>
 
-            {heroTitle && (
+            {title && (
               <h1 className="text-3xl xs:text-4xl sm:text-4xl md:text-5xl lg:text-6xl font-bold w-full lg:w-10/12 xl:w-9/12 2xl:w-8/12 mb-3 xs:mb-4 sm:mb-4 md:mb-5 lg:mb-6 text-white leading-tight sm:leading-tight md:leading-tight lg:leading-tight">
-                {heroTitle}
+                {title}
               </h1>
             )}
 
-            <p className="text-white/85 text-base xs:text-lg sm:text-lg md:text-xl max-w-2xl leading-relaxed mb-6 sm:mb-7 lg:mb-8">
-              Your premier gateway to the region. Managing over 350,000 m² of
-              state-of-the-art Bonded and Re-Export Zone logistics at King
-              Abdulaziz Port, Dammam.
-            </p>
+            {t("hero.description") && (
+              <p className="text-white/85 text-base xs:text-lg sm:text-lg md:text-xl max-w-2xl leading-relaxed mb-6 sm:mb-7 lg:mb-8">
+                {t("hero.description")}
+              </p>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
               <a
@@ -126,7 +85,7 @@ export default function Hero() {
                 href="/track"
                 className="border border-white/70 hover:bg-white hover:text-[#1A2347] transition-all duration-300 py-3 lg:py-3.5 text-white uppercase px-6 lg:px-8 text-sm sm:text-base shadow-lg hover:shadow-xl hover:scale-105 transform w-full sm:w-auto inline-flex items-center justify-center"
               >
-                <span className="tracking-widest">Track Cargo</span>
+                <span className="tracking-widest">{t("hero.trackCargo")}</span>
               </a>
             </div>
           </div>

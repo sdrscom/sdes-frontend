@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Files</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Files</h1>
+        <p class="subtitle">Images and videos used on website pages. Upload here, then choose them in the page editor.</p>
+      </div>
+      <div class="segmented" id="kind">
+        <button type="button" data-kind="" class="active">All</button>
+        <button type="button" data-kind="image">Images</button>
+        <button type="button" data-kind="video">Videos</button>
+      </div>
+    </div>
+
+    <label class="dropzone" id="drop">
+      <span id="drop-icon"></span>
+      <div><strong>Click to upload</strong> or drag images / videos here (max 15 MB each)</div>
+      <input type="file" id="file-input" accept="image/*,video/*" multiple hidden />
+    </label>
+
+    <div class="files-grid" id="grid"><div class="skeleton" style="height:180px"></div></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let files = [];
+    let kind = '';
+    document.getElementById('drop-icon').outerHTML = icon('upload');
+
+    async function load() {
+      const res = await apiFetch('/admin/api/files');
+      files = (await res.json()).data;
+      render();
+    }
+
+    function render() {
+      const visible = files.filter((f) => !kind || (f.mime || '').startsWith(kind + '/'));
+      const grid = document.getElementById('grid');
+      grid.innerHTML = visible.length
+        ? visible
+            .map(
+              (f) => `
+            <div class="file-card">
+              <div class="frame">${mediaTag(f.url, f.mime)}</div>
+              <div class="body">
+                <div class="name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</div>
+                <div class="meta">${formatBytes(f.size)} · ${timeAgo(f.created_at)}</div>
+                <div class="btns">
+                  <a class="btn btn-secondary btn-sm" href="${escapeHtml(f.url)}" target="_blank" rel="noopener" title="Open">${icon('external')}</a>
+                  <button class="btn btn-secondary btn-sm" data-copy="${escapeHtml(f.url)}" title="Copy link">${icon('copy')}</button>
+                  <button class="btn btn-danger btn-sm" data-del="${f.id}" title="Delete">${icon('trash')}</button>
+                </div>
+              </div>
+            </div>`
+            )
+            .join('')
+        : '<p class="empty-msg" style="grid-column:1/-1">No files yet.</p>';
+
+      grid.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(new URL(b.dataset.copy, location.origin).href);
+          showToast('Link copied');
+        } catch {
+          showToast('Could not copy link', true);
+        }
+      }));
+      grid.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => remove(b.dataset.del)));
+    }
+
+    async function remove(id) {
+      if (!(await confirmDialog('Delete this file permanently?', { confirmLabel: 'Delete', danger: true }))) return;
+      let res = await apiFetch(`/admin/api/files/${id}`, { method: 'DELETE' });
+      if (res.status === 409) {
+        const { error } = await res.json();
+        if (!(await confirmDialog(`${error} Delete anyway? The page will show a broken image.`, { confirmLabel: 'Delete anyway', danger: true }))) return;
+        res = await apiFetch(`/admin/api/files/${id}?force=1`, { method: 'DELETE' });
+      }
+      if (res.ok) {
+        showToast('File deleted');
+        load();
+      } else {
+        showToast('Delete failed', true);
+      }
+    }
+
+    async function handle(list) {
+      const items = [...list];
+      if (!items.length) return;
+      const drop = document.getElementById('drop');
+      for (let i = 0; i < items.length; i++) {
+        drop.querySelector('div').textContent = `Uploading ${i + 1} of ${items.length}…`;
+        try {
+          await uploadFile(items[i]);
+        } catch (err) {
+          showToast(`${items[i].name}: ${err.message}`, true);
+        }
+      }
+      drop.querySelector('div').innerHTML = '<strong>Click to upload</strong> or drag images / videos here (max 15 MB each)';
+      showToast('Upload complete');
+      load();
+    }
+
+    const drop = document.getElementById('drop');
+    document.getElementById('file-input').onchange = (e) => handle(e.target.files);
+    drop.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      drop.classList.add('over');
+    });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      handle(e.dataTransfer.files);
+    });
+    document.getElementById('kind').onclick = (e) => {
+      const b = e.target.closest('[data-kind]');
+      if (!b) return;
+      kind = b.dataset.kind;
+      document.querySelectorAll('#kind button').forEach((x) => x.classList.toggle('active', x === b));
+      render();
+    };
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/files.html');
+        load();
+      }
+    })();
+  </script>
+</body>
+</html>

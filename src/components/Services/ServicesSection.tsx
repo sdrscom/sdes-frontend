@@ -13,12 +13,14 @@ import vehicleImg from "../../assets/statsBg.jpg";
 import freightImg from "../../assets/background3.jpg";
 import labourImg from "../../assets/File249.jpg";
 import tradeImg from "../../assets/img3.jpg";
+import { useMedia } from "../../cms/useMedia";
 
 gsap.registerPlugin(ScrollTrigger);
 
 export default function ServicesSection() {
   const { t } = useTranslation();
   const { language } = useLanguage();
+  const media = useMedia();
 
   const sectionsRef = useRef<(HTMLDivElement | null)[]>([]);
   const [modalService, setModalService] = useState<null | {
@@ -40,28 +42,28 @@ export default function ServicesSection() {
       ],
       descriptionKey: "containerServices",
       icon: <Package className="w-10 h-10 text-[#F27141]" />,
-      image: containerImg,
+      image: media("services.container", containerImg),
     },
     {
       titleKey: "generalCargo",
       pointKeys: ["shuttling", "handling", "loading"],
       descriptionKey: "generalCargo",
       icon: <Boxes className="w-10 h-10 text-[#B82227]" />,
-      image: generalImg,
+      image: media("services.general", generalImg),
     },
     {
       titleKey: "vehicleServices",
       pointKeys: ["vinCheck", "odometer", "damageCheck", "stickering"],
       descriptionKey: "vehicleServices",
       icon: <Car className="w-10 h-10 text-[#F27141]" />,
-      image: vehicleImg,
+      image: media("services.vehicle", vehicleImg),
     },
     {
       titleKey: "freightServices",
       pointKeys: ["reExport", "importExport", "inTransit", "bondedShipments"],
       descriptionKey: "freightServices",
       icon: <Truck className="w-10 h-10 text-[#B82227]" />,
-      image: freightImg,
+      image: media("services.freight", freightImg),
     },
     {
       titleKey: "tradeDistribution",
@@ -73,14 +75,14 @@ export default function ServicesSection() {
       ],
       descriptionKey: "tradeDistribution",
       icon: <Globe className="w-10 h-10 text-[#B82227]" />,
-      image: tradeImg,
+      image: media("services.trade", tradeImg),
     },
     {
       titleKey: "labourEquipment",
       pointKeys: ["forklift", "skilledLabor"],
       descriptionKey: "labourEquipment",
       icon: <Wrench className="w-10 h-10 text-[#F27141]" />,
-      image: labourImg,
+      image: media("services.labour", labourImg),
     },
   ];
 

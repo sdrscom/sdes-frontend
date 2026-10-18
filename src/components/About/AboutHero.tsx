@@ -5,9 +5,10 @@ import Pattern from "../../components/Pattern/Pattern";
 import GradientButton from "../../ui/GradientButton";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
+import { useMedia } from "../../cms/useMedia";
+import aboutHeroImage from "../../assets/aboutHero.jpg";
 
 const AboutHero: React.FC = () => {
-  const API_URL = import.meta.env.VITE_API_URL;
   const { language } = useLanguage();
 
   const t = (key: string) => {
@@ -23,66 +24,12 @@ const AboutHero: React.FC = () => {
 
   const [visible, setIsVisible] = useState(false);
   const [heroAnimated, setHeroAnimated] = useState(false);
-  const [heroImage, setHeroImage] = useState<string>("");
-  const [heroTitle, setHeroTitle] = useState<string>("");
-  const [heroDescription, setHeroDescription] = useState<string>("");
+  const media = useMedia();
+  const heroImage = media("about.heroImage", aboutHeroImage);
+  const heroTitle = t("aboutHero.title");
+  const heroDescription = t("aboutHero.description");
 
   const isRTL = language === "ar";
-
-  useEffect(() => {
-    const fetchHeroContent = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/about-text-collections?populate=*&locale=${language}`
-        );
-        const data = await res.json();
-
-        const content = data?.data?.[0];
-
-        if (content?.AboutHeroTitle) {
-          setHeroTitle(content.AboutHeroTitle);
-        } else {
-          setHeroTitle(t("aboutHero.title"));
-        }
-
-        if (content?.AboutHeroDescription) {
-          setHeroDescription(content.AboutHeroDescription);
-        } else {
-          setHeroDescription(t("aboutHero.description"));
-        }
-      } catch (err) {
-        console.error("Error fetching hero content:", err);
-        setHeroTitle(t("aboutHero.title"));
-        setHeroDescription(t("aboutHero.description"));
-      }
-    };
-
-    fetchHeroContent();
-  }, [API_URL, language]);
-
-  useEffect(() => {
-    const fetchHeroImage = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/about-us-hero?populate=*`);
-        const data = await res.json();
-
-        const imageUrl =
-          data?.data?.aboutHero?.url ||
-          data?.data?.aboutHero?.formats?.large?.url ||
-          "";
-
-        const fullUrl = imageUrl?.startsWith("http")
-          ? imageUrl
-          : `${API_URL}${imageUrl}`;
-
-        setHeroImage(fullUrl);
-      } catch (error) {
-        console.error("Error loading hero image", error);
-      }
-    };
-
-    fetchHeroImage();
-  }, [API_URL]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 200);

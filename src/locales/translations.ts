@@ -8,14 +8,37 @@
 // - Streamlined Operations
 // =============================================
 
+export type TimelineEventContent = {
+  year: string;
+  title: string;
+  description: string;
+  warehouses: string;
+  teus: string;
+  image: string;
+};
+
+// One facility card on the Facilities page. `area` is free text ("12,000");
+// blank hides the figure.
+export type FacilityContent = {
+  name: string;
+  area: string;
+  image: string;
+};
+
 export const translations = {
   en: {
     hero: {
       welcome: "Welcome To Saudi Development and Export Services",
+      // Optional second headline; hidden while empty.
+      title: "",
+      description:
+        "Your premier gateway to the region. Managing over 350,000 m² of state-of-the-art Bonded and Re-Export Zone logistics at King Abdulaziz Port, Dammam.",
       services: "OUR SERVICES",
+      trackCargo: "Track Cargo",
     },
     primeLocation: {
       title: "Prime Location & Accessibility",
+      description: "",
       strategic: "Strategic Location",
       customs: "Customs Services",
       distribution: "Fast Distribution",
@@ -66,6 +89,8 @@ export const translations = {
       tracking: "Tracking",
       realTime: "Real-Time Updates",
       learnMore: "Learn More",
+      // Bullet list under the title; hidden while empty.
+      points: [] as string[],
     },
 
     // -------------------------------------------------
@@ -177,6 +202,7 @@ export const translations = {
       cta: "Learn more",
 
       totalAreaTitle: "Total Bonded Zone Area",
+      totalArea: "351,000",
       worldClass: "World-class Infrastructure",
       strategicLocation: "Strategic Dammam Location",
 
@@ -186,6 +212,21 @@ export const translations = {
         storageSpecialized: "Storage & Specialized",
         operationsSupport: "Operations & Support",
       },
+
+      storageItems: [
+        { name: "Closed Warehouses", area: "", image: "" },
+        { name: "AutoZone Area", area: "", image: "" },
+        { name: "Shed Area", area: "", image: "" },
+        { name: "Cold Chamber", area: "", image: "" },
+        { name: "Chemical Storage Area", area: "", image: "" },
+      ] as FacilityContent[],
+      operationsItems: [
+        { name: "Containers Stacking Area", area: "", image: "" },
+        { name: "Transit Area", area: "", image: "" },
+        { name: "Inspection Shed Area", area: "", image: "" },
+        { name: "Truck Parking Area", area: "", image: "" },
+        { name: "Multipurpose Area", area: "", image: "" },
+      ] as FacilityContent[],
     },
 
     preBuiltWarehouses: {
@@ -242,6 +283,9 @@ export const translations = {
     // -------------------------------------------------
 
     servicesHero: {
+      title: "Comprehensive Logistics & Bonded Zone Solutions",
+      description:
+        "From terminal shuttling and cargo handling to customs clearance, vehicle inspection, and value-added distribution — SDES delivers seamless logistics inside the bonded zone.",
       stats: {
         onSite: "On-Site",
         customsFacilities: "Customs Facilities",
@@ -407,6 +451,8 @@ export const translations = {
         subtitle: "Our Journey & Achievements",
         title: "The SDES Story",
       },
+      // Filled from the CMS; the timeline is hidden while empty.
+      events: [] as TimelineEventContent[],
     },
 
     //
@@ -653,6 +699,7 @@ export const translations = {
       gallery: "Gallery",
       careers: "Careers",
       login: "Login",
+      operationPortal: "Operation Portal",
     },
 
     footer: {
@@ -842,10 +889,15 @@ export const translations = {
   ar: {
     hero: {
       welcome: "مرحباً بكم في الشركة السعودية للتنمية وخدمات التصدير",
+      title: "",
+      description:
+        "بوابتك المتميزة إلى المنطقة. ندير أكثر من 350,000 م² من الخدمات اللوجستية الحديثة في المنطقة الجمركية ومنطقة إعادة التصدير بميناء الملك عبدالعزيز في الدمام.",
       services: "خدماتنا",
+      trackCargo: "تتبع الشحنة",
     },
     primeLocation: {
       title: "موقع متميز وسهولة الوصول",
+      description: "",
       strategic: "موقع استراتيجي",
       customs: "خدمات جمركية",
       distribution: "توزيع سريع",
@@ -896,6 +948,7 @@ export const translations = {
       tracking: "التتبع",
       realTime: "تحديثات فورية",
       learnMore: "اعرف المزيد",
+      points: [] as string[],
     },
 
     // -------------------------------------------------
@@ -1006,6 +1059,7 @@ export const translations = {
       cta: "تعرف على المزيد",
 
       totalAreaTitle: "إجمالي مساحة منطقة الإيداع",
+      totalArea: "351,000",
       worldClass: "بنية تحتية عالمية المستوى",
       strategicLocation: "موقع الدمام الاستراتيجي",
 
@@ -1015,6 +1069,21 @@ export const translations = {
         storageSpecialized: "التخزين والمتخصصة",
         operationsSupport: "العمليات والدعم",
       },
+
+      storageItems: [
+        { name: "المستودعات المغلقة", area: "", image: "" },
+        { name: "منطقة المركبات", area: "", image: "" },
+        { name: "منطقة الهنغارات", area: "", image: "" },
+        { name: "الغرفة الباردة", area: "", image: "" },
+        { name: "تخزين المواد الكيميائية", area: "", image: "" },
+      ] as FacilityContent[],
+      operationsItems: [
+        { name: "رصّ الحاويات", area: "", image: "" },
+        { name: "منطقة العبور", area: "", image: "" },
+        { name: "منطقة التفتيش", area: "", image: "" },
+        { name: "مواقف الشاحنات", area: "", image: "" },
+        { name: "منطقة متعددة الاستخدامات", area: "", image: "" },
+      ] as FacilityContent[],
     },
 
     preBuiltWarehouses: {
@@ -1070,6 +1139,9 @@ export const translations = {
     // -------------------------------------------------
 
     servicesHero: {
+      title: "حلول لوجستية شاملة في المنطقة الجمركية",
+      description:
+        "من النقل بين المحطات ومناولة البضائع إلى التخليص الجمركي وفحص المركبات والتوزيع ذي القيمة المضافة — تقدم SDES خدمات لوجستية متكاملة داخل المنطقة الجمركية.",
       stats: {
         onSite: "في الموقع",
         customsFacilities: "مرافق جمركية",
@@ -1235,6 +1307,7 @@ export const translations = {
         subtitle: "رحلتنا وإنجازاتنا",
         title: "قصة SDES",
       },
+      events: [] as TimelineEventContent[],
     },
 
     locationHero: {
@@ -1470,6 +1543,7 @@ export const translations = {
       gallery: "معرض الصور",
       careers: "الوظائف",
       login: "تسجيل الدخول",
+      operationPortal: "بوابة العمليات",
     },
 
     footer: {

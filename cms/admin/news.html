@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | News</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <h1>News</h1>
+    <p class="subtitle">Articles shown on the public News page.</p>
+
+    <div class="card">
+      <h3 id="form-title">Add article</h3>
+      <form id="news-form">
+        <input type="hidden" id="edit-id" />
+
+        <div class="grid-2">
+          <div>
+            <label for="title">Title *</label>
+            <input type="text" id="title" required />
+          </div>
+          <div>
+            <label for="slug">Badge / Slug (e.g. ANNOUNCEMENT)</label>
+            <input type="text" id="slug" />
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="locale">Language</label>
+            <select id="locale">
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </div>
+          <div>
+            <label for="publishedAt">Published date</label>
+            <input type="date" id="publishedAt" />
+          </div>
+        </div>
+
+        <label for="author">Author (optional)</label>
+        <input type="text" id="author" />
+
+        <label for="content">Content (separate paragraphs with a blank line)</label>
+        <textarea id="content" rows="8"></textarea>
+
+        <label for="image">Image</label>
+        <input type="file" id="image" accept="image/*" />
+
+        <div style="margin-top:20px; display:flex; gap:10px;">
+          <button type="submit" class="btn">Save article</button>
+          <button type="button" class="btn btn-secondary" id="cancel-edit" style="display:none;">Cancel</button>
+        </div>
+        <p class="form-error" id="form-error" style="display:none;"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Published articles</h3>
+      <table>
+        <thead>
+          <tr><th></th><th>Title</th><th>Lang</th><th>Published</th><th></th></tr>
+        </thead>
+        <tbody id="news-rows"></tbody>
+      </table>
+      <p class="empty-msg" id="empty-msg" style="display:none;">No articles yet.</p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let items = [];
+
+    async function loadNews() {
+      const res = await apiFetch('/admin/api/news');
+      const data = await res.json();
+      items = data.data;
+      renderRows();
+    }
+
+    function renderRows() {
+      const tbody = document.getElementById('news-rows');
+      document.getElementById('empty-msg').style.display = items.length ? 'none' : 'block';
+      tbody.innerHTML = items
+        .map(
+          (item) => `
+        <tr>
+          <td>${item.image ? `<img class="thumb" src="${escapeHtml(item.image.url)}" />` : ''}</td>
+          <td>${escapeHtml(item.title)}</td>
+          <td><span class="pill">${item.locale === 'ar' ? 'AR' : 'EN'}</span></td>
+          <td>${item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : ''}</td>
+          <td class="actions-cell">
+            <button class="btn btn-sm btn-secondary" onclick="editItem(${item.id})">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteItem(${item.id})">Delete</button>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function editItem(id) {
+      const item = items.find((i) => i.id === id);
+      if (!item) return;
+      document.getElementById('form-title').textContent = 'Edit article';
+      document.getElementById('edit-id').value = item.id;
+      document.getElementById('title').value = item.title || '';
+      document.getElementById('slug').value = item.slug || '';
+      document.getElementById('locale').value = item.locale || 'en';
+      document.getElementById('author').value = item.author || '';
+      document.getElementById('content').value = item.content || '';
+      document.getElementById('publishedAt').value = item.publishedAt ? item.publishedAt.slice(0, 10) : '';
+      document.getElementById('cancel-edit').style.display = 'inline-flex';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetForm() {
+      document.getElementById('news-form').reset();
+      document.getElementById('edit-id').value = '';
+      document.getElementById('form-title').textContent = 'Add article';
+      document.getElementById('cancel-edit').style.display = 'none';
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', resetForm);
+
+    async function deleteItem(id) {
+      if (!confirm('Delete this article?')) return;
+      await apiFetch(`/admin/api/news/${id}`, { method: 'DELETE' });
+      showToast('Article deleted');
+      loadNews();
+    }
+
+    document.getElementById('news-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.style.display = 'none';
+
+      const id = document.getElementById('edit-id').value;
+      const fd = new FormData();
+      fd.append('title', document.getElementById('title').value);
+      fd.append('slug', document.getElementById('slug').value);
+      fd.append('locale', document.getElementById('locale').value);
+      fd.append('author', document.getElementById('author').value);
+      fd.append('content', document.getElementById('content').value);
+      const publishedAt = document.getElementById('publishedAt').value;
+      if (publishedAt) fd.append('publishedAt', new Date(publishedAt).toISOString());
+      const imageFile = document.getElementById('image').files[0];
+      if (imageFile) fd.append('image', imageFile);
+
+      const res = await apiFetch(id ? `/admin/api/news/${id}` : '/admin/api/news', {
+        method: id ? 'PUT' : 'POST',
+        body: fd,
+      });
+
+      if (res.ok) {
+        showToast(id ? 'Article updated' : 'Article created');
+        resetForm();
+        loadNews();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        errorEl.textContent = data.error || 'Failed to save article';
+        errorEl.style.display = 'block';
+      }
+    });
+
+    (async () => {
+      const user = await requireSession();
+      if (user) {
+        renderNav('/news.html');
+        loadNews();
+      }
+    })();
+  </script>
+</body>
+</html>

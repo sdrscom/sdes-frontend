@@ -3,63 +3,24 @@ import Pattern from "../Pattern/Pattern";
 // import GradientButton from "../../ui/GradientButton";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "../../context/LanguageContext";
+import { useMedia } from "../../cms/useMedia";
+
+// Matches the investment.heroImage.N slots in cms/content/pages.js.
+const HERO_SLIDES = 4;
 
 const InvestmentHero = () => {
   const { t } = useTranslation();
   const { language } = useLanguage();
-
-  const API_URL = import.meta.env.VITE_API_URL;
+  const media = useMedia();
 
   const [visible, setIsVisible] = useState(false);
   const [heroAnimated, setHeroAnimated] = useState(false);
 
-  const [backgrounds, setBackgrounds] = useState<string[]>([]);
+  const backgrounds = Array.from({ length: HERO_SLIDES }, (_, i) =>
+    media(`investment.heroImage.${i}`)
+  ).filter((url): url is string => !!url);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [animationKey, setAnimationKey] = useState(0);
-
-  const [heroTitle, setHeroTitle] = useState("");
-  const [heroDescription, setHeroDescription] = useState("");
-
-  useEffect(() => {
-    const fetchImages = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/overview-hero?populate=*`);
-        const data = await res.json();
-        const imagesData = data?.data?.overviewImages;
-
-        const imgs =
-          imagesData?.map((img: any) => {
-            const url = img?.url || img?.formats?.large?.url;
-            return url?.startsWith("http") ? url : `${API_URL}${url}`;
-          }) || [];
-
-        setBackgrounds(imgs);
-      } catch (error) {
-        console.error("Error loading images", error);
-      }
-    };
-
-    fetchImages();
-  }, [API_URL]);
-
-  useEffect(() => {
-    const fetchTextContent = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/overview-text-collections?locale=${language}&populate=*`
-        );
-        const data = await res.json();
-        const textData = data?.data?.[0];
-
-        setHeroTitle(textData?.OverViewTitle || "");
-        setHeroDescription(textData?.OverViewHeroDescription || "");
-      } catch (error) {
-        console.error("Error loading text content", error);
-      }
-    };
-
-    fetchTextContent();
-  }, [API_URL, language]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 200);
@@ -68,14 +29,15 @@ const InvestmentHero = () => {
 
   useEffect(() => setHeroAnimated(true), []);
 
+  const slideCount = backgrounds.length;
   useEffect(() => {
-    if (backgrounds.length === 0) return;
+    if (slideCount === 0) return;
     const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % backgrounds.length);
+      setCurrentIndex((prev) => (prev + 1) % slideCount);
       setAnimationKey((prev) => prev + 1);
     }, 4000);
     return () => clearInterval(interval);
-  }, [backgrounds]);
+  }, [slideCount]);
 
   const microStatsHighlights = [
     { key: "operator", color: "#B82227" },
@@ -146,11 +108,11 @@ const InvestmentHero = () => {
               }`}
               style={{ transitionDelay: "200ms" }}
             >
-              {heroTitle || t("investment.title")}
+              {t("investment.title")}
             </h1>
 
             <p className="mt-6 text-sm sm:text-base md:text-lg text-[#E8EAED] leading-relaxed max-w-xl lg:mx-0">
-              {heroDescription || t("investment.description")}
+              {t("investment.description")}
             </p>
           </div>
         </div>

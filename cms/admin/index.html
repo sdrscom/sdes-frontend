@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Log in</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="brand-mark" style="margin:0 auto 14px;width:56px;height:56px"><img src="/img/logo-mark.png" alt="SDES logo" /></div>
+      <h1>SDES Content Manager</h1>
+      <p class="subtitle">Sign in to manage the website</p>
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input type="text" id="username" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+
+        <button type="submit" class="btn" style="width:100%; justify-content:center; margin-top:22px;">
+          Log in
+        </button>
+        <p class="form-error" id="error" style="display:none;"></p>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    (async () => {
+      const res = await fetch('/admin/api/me', { credentials: 'include' });
+      if (res.ok) window.location.href = '/dashboard.html';
+    })();
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('error');
+      errorEl.style.display = 'none';
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      const res = await fetch('/admin/api/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (res.ok) {
+        window.location.href = '/dashboard.html';
+      } else {
+        const data = await res.json().catch(() => ({}));
+        errorEl.textContent = data.error || 'Login failed';
+        errorEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

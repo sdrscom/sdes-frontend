@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Pages</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Pages</h1>
+        <p class="subtitle">Edit the text and images on every page of the website, in English and Arabic.</p>
+      </div>
+      <div class="search" style="max-width:280px">
+        <span id="filter-icon"></span>
+        <input type="search" id="filter" placeholder="Filter pages" />
+      </div>
+    </div>
+
+    <div class="page-grid" id="pages">
+      <div class="skeleton" style="height:170px"></div>
+      <div class="skeleton" style="height:170px"></div>
+      <div class="skeleton" style="height:170px"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let pages = [];
+    document.getElementById('filter-icon').outerHTML = icon('search');
+
+    function render() {
+      const q = document.getElementById('filter').value.trim().toLowerCase();
+      const visible = pages.filter(
+        (p) => !q || p.title.toLowerCase().includes(q) || p.sections.some((s) => s.label.toLowerCase().includes(q))
+      );
+      document.getElementById('pages').innerHTML = visible.length
+        ? visible
+            .map((p) => {
+              const status = p.editedSections || p.editedMedia
+                ? `<span class="pill pill-success">${icon('check')} Customised</span>`
+                : '<span class="pill">Site defaults</span>';
+              return `
+              <a class="page-card" href="/page-edit.html?page=${p.slug}">
+                <div class="page-card-head">
+                  <div class="stat-icon${p.slug === 'home' ? ' orange' : ''}">${icon(p.slug === 'global' ? 'layers' : 'pages')}</div>
+                  <div><h3>${escapeHtml(p.title)}</h3><div class="path">${escapeHtml(p.slug === 'global' ? 'All pages' : p.path)}</div></div>
+                </div>
+                <ul>${p.sections.map((s) => `<li class="pill">${escapeHtml(s.label)}</li>`).join('')}</ul>
+                <div class="page-card-foot">
+                  ${status}
+                  <span>${p.lastUpdated ? `Edited ${timeAgo(p.lastUpdated.at)}${p.lastUpdated.by ? ' by ' + escapeHtml(p.lastUpdated.by) : ''}` : ''}</span>
+                </div>
+              </a>`;
+            })
+            .join('')
+        : '<p class="empty-msg" style="grid-column:1/-1">No pages match.</p>';
+    }
+
+    document.getElementById('filter').addEventListener('input', render);
+
+    (async () => {
+      const user = await requireSession();
+      if (!user) return;
+      renderNav('/pages.html');
+      const res = await apiFetch('/admin/api/pages');
+      const body = await res.json();
+      pages = body.data;
+      updateSiteLinks(body.frontendOrigin);
+      render();
+    })();
+  </script>
+</body>
+</html>

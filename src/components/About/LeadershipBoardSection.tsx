@@ -5,6 +5,7 @@ import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
 import { useLanguage } from "../../context/LanguageContext";
 import { translations } from "../../locales/translations";
+import { useMedia } from "../../cms/useMedia";
 
 const TeamMemberCard: React.FC<{
   name: string;
@@ -44,6 +45,7 @@ const TeamMemberCard: React.FC<{
 
 const AboutSections: React.FC = () => {
   const { language } = useLanguage();
+  const media = useMedia();
 
   const t = (key: string) => {
     const keys = key.split(".");
@@ -93,7 +95,7 @@ const AboutSections: React.FC = () => {
             <div className="relative">
               <div className="w-full max-w-sm lg:max-w-md mx-auto lg:mt-10 rounded-xl overflow-hidden shadow-2xl transition duration-500 transform">
                 <div className="w-full h-96 lg:h-[500px] bg-gray-800 flex items-center justify-center">
-          <img src="/ceo.jpg" alt="CEO" className="w-full h-full object-cover" />
+          <img src={media("about.ceoPhoto", "/ceo.jpg")} alt="CEO" className="w-full h-full object-cover" />
          </div>
                 <div
                   className="absolute bottom-0 left-0 w-full h-1"

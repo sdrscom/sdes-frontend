@@ -1,0 +1,23 @@
+{
+  "name": "sdes-cms",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "sync-defaults": "node scripts/sync-defaults.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.0",
+    "@vercel/blob": "^2.8.1",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.0"
+  }
+}

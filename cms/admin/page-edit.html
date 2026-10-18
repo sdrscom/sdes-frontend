@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Edit page</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <div class="breadcrumb"><a href="/pages.html">Pages</a><span id="crumb-sep"></span><span id="crumb-page">…</span></div>
+        <h1 id="page-title">Loading…</h1>
+        <p class="subtitle" id="page-sub"></p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary" id="preview-btn"></button>
+        <div class="split-btn">
+          <button class="btn btn-accent" id="save-btn" disabled></button>
+          <button class="btn btn-accent caret" id="save-caret" aria-label="More save options"></button>
+          <div class="split-menu" id="save-menu" hidden>
+            <button type="button" data-action="save-preview"></button>
+            <button type="button" data-action="discard"></button>
+            <button type="button" data-action="reset-page"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-meta">
+      <div>
+        <label style="margin-top:0">Editing language</label>
+        <div class="segmented" id="lang-switch">
+          <button type="button" data-lang="en" class="active">English</button>
+          <button type="button" data-lang="ar">العربية (Arabic)</button>
+        </div>
+      </div>
+      <div id="last-updated" class="subtitle" style="margin:0;text-align:right"></div>
+    </div>
+
+    <div class="editor-frame">
+      <div class="tabs" id="tabs">
+        <button type="button" data-tab="content" class="active"></button>
+        <button type="button" data-tab="images"></button>
+        <button type="button" data-tab="versions"></button>
+      </div>
+
+      <div class="editor-body">
+        <div id="tab-content">
+          <div class="skeleton" style="height:120px;margin-bottom:16px"></div>
+          <div class="skeleton" style="height:240px"></div>
+        </div>
+        <aside class="editor-side">
+          <div class="panel">
+            <div class="panel-head">Page sections</div>
+            <nav class="outline" id="outline"></nav>
+            <div class="panel-tips" id="tips"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="save-bar" id="save-bar" hidden>
+      <span id="dirty-summary"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="bar-discard">Discard</button>
+        <button class="btn btn-accent btn-sm" id="bar-save">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const slug = new URLSearchParams(location.search).get('page');
+    const LANG_LABEL = { en: 'English', ar: 'Arabic' };
+
+    let page, defaults, templates, origin;
+    let draft, baseline; // { en: {section: obj}, ar: {...}, media: {key: url} }
+    let lang = 'en';
+    let tab = 'content';
+    const collapsed = new Set();
+    let saving = false;
+
+    // ---------- helpers ----------
+    const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
+    // Saved data wins; keys added to the site later still show their defaults.
+    function merge(base, over) {
+      if (over === undefined) return clone(base);
+      if (isPlainObject(base) && isPlainObject(over)) {
+        const out = clone(base);
+        for (const k of Object.keys(over)) out[k] = merge(base[k], over[k]);
+        return out;
+      }
+      return clone(over);
+    }
+
+    function getIn(obj, path) {
+      return path.reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    }
+    function setIn(obj, path, value) {
+      const last = path[path.length - 1];
+      const parent = getIn(obj, path.slice(0, -1));
+      parent[last] = value;
+    }
+
+    function humanize(key) {
+      return String(key)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/^./, (c) => c.toUpperCase());
+    }
+
+    const IMAGE_KEY = /(image|img|logo|photo|picture|thumbnail|avatar|banner)$/i;
+    const LONG_KEY = /(desc|description|paragraph|content|answer|message|text|body|note|intro|summary)\d*$/i;
+
+    function isImageField(key, value, def) {
+      if (!IMAGE_KEY.test(String(key))) return false;
+      const v = value || def || '';
+      return v === '' || /^(\/|https?:)/.test(v) || /\.(png|jpe?g|webp|gif|svg|mp4)$/i.test(v);
+    }
+
+    function assetUrl(value) {
+      if (!value) return '';
+      if (/^https?:/.test(value) || value.startsWith('/media/')) return value;
+      return origin.replace(/\/$/, '') + (value.startsWith('/') ? value : '/' + value);
+    }
+
+    function itemTitle(item, i) {
+      if (isPlainObject(item)) {
+        const label = ['title', 'name', 'question', 'year', 'label', 'heading'].map((k) => item[k]).find((v) => v);
+        if (label) return `${i + 1}. ${label}`;
+      } else if (typeof item === 'string' && item) {
+        return `${i + 1}. ${item}`;
+      }
+      return `Item ${i + 1}`;
+    }
+
+    function blankLike(sample) {
+      if (Array.isArray(sample)) return [];
+      if (isPlainObject(sample)) return Object.fromEntries(Object.entries(sample).map(([k, v]) => [k, blankLike(v)]));
+      if (typeof sample === 'number') return 0;
+      if (typeof sample === 'boolean') return false;
+      return '';
+    }
+
+    function sectionDirty(l, key) {
+      return !same(draft[l][key], baseline[l][key]);
+    }
+    function mediaDirty() {
+      return !same(draft.media, baseline.media);
+    }
+    function dirtyCount() {
+      let n = 0;
+      for (const l of ['en', 'ar']) for (const s of page.sections) if (sectionDirty(l, s.key)) n++;
+      if (mediaDirty()) n++;
+      return n;
+    }
+
+    // ---------- loading ----------
+    async function load() {
+      const res = await apiFetch(`/admin/api/pages/${encodeURIComponent(slug)}`);
+      if (!res.ok) {
+        document.getElementById('tab-content').innerHTML = '<p class="empty-msg">Page not found. <a href="/pages.html">Back to pages</a></p>';
+        return;
+      }
+      const body = await res.json();
+      page = body.page;
+      defaults = body.defaults;
+      templates = body.templates || {};
+      origin = body.frontendOrigin;
+      updateSiteLinks(origin);
+
+      draft = { en: {}, ar: {}, media: clone(body.saved.media || {}) };
+      for (const l of ['en', 'ar']) {
+        for (const s of page.sections) draft[l][s.key] = merge(defaults[l][s.key], body.saved[l][s.key]);
+      }
+      baseline = clone(draft);
+
+      document.title = `SDES CMS | ${page.title}`;
+      document.getElementById('crumb-page').textContent = page.title;
+      document.getElementById('page-title').textContent = page.title;
+      document.getElementById('page-sub').textContent =
+        page.slug === 'global' ? 'Shown on every page of the website.' : `Website address: ${page.path}`;
+      document.getElementById('last-updated').textContent = body.lastUpdated
+        ? `Last saved ${timeAgo(body.lastUpdated.at)}${body.lastUpdated.by ? ' by ' + body.lastUpdated.by : ''}`
+        : 'Not edited yet — showing the site defaults';
+
+      if (page.sections.length > 1 && !location.hash) page.sections.slice(1).forEach((s) => collapsed.add(s.key));
+      render();
+
+      if (location.hash.startsWith('#section-')) {
+        const key = location.hash.slice('#section-'.length);
+        page.sections.forEach((s) => s.key !== key && collapsed.add(s.key));
+        render();
+        document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
+    // ---------- rendering ----------
+    function render() {
+      document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelector('[data-tab="images"] .count')?.remove();
+      const mediaCount = (page.media || []).length;
+      if (mediaCount) document.querySelector('[data-tab="images"]').insertAdjacentHTML('beforeend', `<span class="count">${mediaCount}</span>`);
+      document.getElementById('lang-switch').parentElement.style.visibility = tab === 'content' ? 'visible' : 'hidden';
+
+      const host = document.getElementById('tab-content');
+      host.innerHTML = '';
+      if (tab === 'content') renderContent(host);
+      else if (tab === 'images') renderImages(host);
+      else renderVersions(host);
+      renderOutline();
+      refreshDirty();
+    }
+
+    function renderContent(host) {
+      const head = document.createElement('div');
+      head.className = 'section-title-row';
+      head.innerHTML = `<h4>Page content · ${LANG_LABEL[lang]}</h4>
+        <button class="btn btn-ghost btn-sm" type="button" id="toggle-all">${collapsed.size ? 'Expand all' : 'Collapse all'}</button>`;
+      host.appendChild(head);
+      head.querySelector('#toggle-all').onclick = () => {
+        if (collapsed.size) collapsed.clear();
+        else page.sections.forEach((s) => collapsed.add(s.key));
+        render();
+      };
+
+      for (const section of page.sections) host.appendChild(renderBlock(section));
+    }
+
+    function renderBlock(section) {
+      const block = document.createElement('section');
+      block.className = 'block' + (collapsed.has(section.key) ? ' collapsed' : '');
+      block.id = `section-${section.key}`;
+      block.dataset.section = section.key;
+
+      const customised = !same(draft[lang][section.key], defaults[lang][section.key]);
+      block.innerHTML = `
+        <div class="block-head">
+          ${icon('chevronDown', 'icon chev')}
+          <strong>${escapeHtml(section.label)}</strong>
+          <span class="tag">${escapeHtml(lang.toUpperCase())}</span>
+          ${customised ? '<span class="pill pill-success">Customised</span>' : ''}
+          <span class="pill pill-warn unsaved" hidden>Unsaved</span>
+          <div class="block-tools">
+            <button class="tool" type="button" data-act="preview" title="Preview this page">${icon('eye')}</button>
+            <button class="tool danger" type="button" data-act="reset" title="Reset section to site default">${icon('reset')}</button>
+          </div>
+        </div>
+        <div class="block-content" dir="${lang === 'ar' ? 'rtl' : 'ltr'}"></div>`;
+
+      block.querySelector('.block-head').addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'preview') return openPreview();
+        if (act === 'reset') return resetSection(section);
+        collapsed.has(section.key) ? collapsed.delete(section.key) : collapsed.add(section.key);
+        block.classList.toggle('collapsed');
+      });
+
+      const content = block.querySelector('.block-content');
+      if (!collapsed.has(section.key)) {
+        renderNode(content, draft[lang][section.key], [section.key], defaults[lang][section.key]);
+      } else {
+        // Render lazily on first expand to keep long pages fast.
+        const observer = new MutationObserver(() => {
+          if (!block.classList.contains('collapsed') && !content.childElementCount) {
+            renderNode(content, draft[lang][section.key], [section.key], defaults[lang][section.key]);
+            observer.disconnect();
+          }
+        });
+        observer.observe(block, { attributes: true, attributeFilter: ['class'] });
+      }
+      return block;
+    }
+
+    // path = [sectionKey, ...]; values live at draft[lang][sectionKey]...
+    function renderNode(host, value, path, def) {
+      if (isPlainObject(value)) {
+        for (const [k, v] of Object.entries(value)) {
+          const childPath = [...path, k];
+          const childDef = def?.[k];
+          if (isPlainObject(v) || (Array.isArray(v) && (v.some((x) => typeof x === 'object') || templates[templatePath(childPath)]))) {
+            const group = document.createElement('div');
+            group.className = 'group';
+            group.innerHTML = `<div class="group-title">${escapeHtml(humanize(k))}</div>`;
+            host.appendChild(group);
+            renderNode(group, v, childPath, childDef);
+          } else if (Array.isArray(v)) {
+            const group = document.createElement('div');
+            group.className = 'group';
+            group.innerHTML = `<div class="group-title">${escapeHtml(humanize(k))}</div>`;
+            host.appendChild(group);
+            renderList(group, v, childPath, childDef);
+          } else {
+            host.appendChild(renderField(k, v, childPath, childDef));
+          }
+        }
+      } else if (Array.isArray(value)) {
+        renderList(host, value, path, def);
+      }
+    }
+
+    function templatePath(path) {
+      return path.filter((p) => typeof p !== 'number').join('.');
+    }
+
+    function renderList(host, list, path, def) {
+      list.forEach((item, i) => {
+        const card = document.createElement('div');
+        card.className = 'list-item';
+        card.innerHTML = `
+          <div class="list-item-head">
+            <strong>${escapeHtml(itemTitle(item, i))}</strong>
+            <button class="tool" type="button" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button>
+            <button class="tool" type="button" data-act="down" title="Move down" ${i === list.length - 1 ? 'disabled' : ''}>${icon('down')}</button>
+            <button class="tool danger" type="button" data-act="remove" title="Remove">${icon('trash')}</button>
+          </div>`;
+        card.querySelector('.list-item-head').onclick = (e) => {
+          const act = e.target.closest('[data-act]')?.dataset.act;
+          if (!act) return;
+          const arr = getIn(draft[lang], path);
+          if (act === 'remove') arr.splice(i, 1);
+          else {
+            const j = act === 'up' ? i - 1 : i + 1;
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          rerenderKeepingScroll();
+        };
+        if (isPlainObject(item)) renderNode(card, item, [...path, i], def?.[i]);
+        else card.appendChild(renderField(null, item, [...path, i], def?.[i]));
+        host.appendChild(card);
+      });
+
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'btn btn-secondary btn-sm add-item';
+      add.innerHTML = `${icon('plus')} Add item`;
+      add.onclick = () => {
+        const arr = getIn(draft[lang], path);
+        const template = templates[templatePath(path)];
+        arr.push(template ? clone(template) : blankLike(arr[0] ?? def?.[0] ?? ''));
+        rerenderKeepingScroll();
+      };
+      host.appendChild(add);
+    }
+
+    function renderField(key, value, path, def) {
+      const field = document.createElement('div');
+      field.className = 'field';
+      const id = 'f-' + path.join('-').replace(/[^\w-]/g, '_');
+      const label = key === null ? '' : `<label for="${id}">${escapeHtml(humanize(key))}</label>`;
+
+      if (typeof value === 'boolean') {
+        field.innerHTML = `<div class="checkbox-row"><input type="checkbox" id="${id}" ${value ? 'checked' : ''}/><label for="${id}" style="margin:0">${escapeHtml(humanize(key))}</label></div>`;
+        field.querySelector('input').onchange = (e) => update(path, e.target.checked, field, def);
+        return field;
+      }
+
+      if (isImageField(key, value, def)) {
+        field.innerHTML = `${label}
+          <div class="image-field">
+            <div class="preview">${value ? mediaTag(assetUrl(value)) : icon('image')}</div>
+            <div class="grow">
+              <input type="text" id="${id}" value="${escapeHtml(value)}" placeholder="No image" />
+              <div class="btns">
+                <button class="btn btn-secondary btn-sm" type="button" data-act="pick">${icon('upload')} Choose image</button>
+                ${def ? `<button class="btn btn-ghost btn-sm" type="button" data-act="default">Use default</button>` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="field-meta"><span></span><span class="state"></span></div>`;
+        const input = field.querySelector('input');
+        const setValue = (v) => {
+          input.value = v;
+          field.querySelector('.preview').innerHTML = v ? mediaTag(assetUrl(v)) : icon('image');
+          update(path, v, field, def);
+        };
+        input.oninput = () => setValue(input.value);
+        field.querySelector('[data-act="pick"]').onclick = async () => {
+          const url = await pickFile({ accept: 'image' });
+          if (url) setValue(url);
+        };
+        const useDefault = field.querySelector('[data-act="default"]');
+        if (useDefault) useDefault.onclick = () => setValue(def);
+        markField(field, value, def);
+        return field;
+      }
+
+      if (typeof value === 'number') {
+        field.innerHTML = `${label}<input type="number" id="${id}" value="${value}" />
+          <div class="field-meta"><span></span><span class="state"></span></div>`;
+        field.querySelector('input').oninput = (e) => update(path, e.target.value === '' ? 0 : Number(e.target.value), field, def);
+        markField(field, value, def);
+        return field;
+      }
+
+      const text = value == null ? '' : String(value);
+      const long = text.length > 70 || String(def || '').length > 70 || LONG_KEY.test(String(key || ''));
+      field.innerHTML = `${label}
+        ${long ? `<textarea id="${id}" rows="3"></textarea>` : `<input type="text" id="${id}" />`}
+        <div class="field-meta"><span class="chars"></span><span class="state"></span></div>`;
+      const input = field.querySelector('input, textarea');
+      input.value = text;
+      if (lang === 'ar') input.dir = 'rtl';
+      const grow = () => {
+        if (input.tagName === 'TEXTAREA') {
+          input.style.height = 'auto';
+          input.style.height = Math.max(input.scrollHeight + 2, 72) + 'px';
+        }
+      };
+      input.oninput = () => {
+        grow();
+        update(path, input.value, field, def);
+        // Keep list item titles in sync with their name/title field.
+        const card = field.closest('.list-item');
+        if (card && ['title', 'name', 'question', 'year', 'label', 'heading'].includes(key)) {
+          const idx = path[path.length - 2];
+          card.querySelector('.list-item-head strong').textContent = itemTitle(getIn(draft[lang], path.slice(0, -1)), idx);
+        }
+      };
+      requestAnimationFrame(grow);
+      markField(field, text, def);
+      return field;
+    }
+
+    function markField(field, value, def) {
+      const chars = field.querySelector('.chars');
+      if (chars) chars.textContent = `${String(value ?? '').length} characters`;
+      const state = field.querySelector('.state');
+      if (!state) return;
+      const changed = def !== undefined && !same(value, def);
+      field.classList.toggle('is-changed', changed);
+      state.innerHTML = '';
+      if (def === undefined) {
+        state.textContent = 'New item';
+      } else if (changed) {
+        state.innerHTML = `<span class="changed">Changed from default</span> · <button type="button">Restore default</button>`;
+        state.querySelector('button').onclick = () => {
+          const input = field.querySelector('input[type="text"], input[type="number"], textarea');
+          if (input) {
+            input.value = def;
+            input.dispatchEvent(new Event('input'));
+          }
+        };
+      }
+    }
+
+    function update(path, value, field, def) {
+      setIn(draft[lang], path, value);
+      markField(field, value, def);
+      refreshDirty();
+    }
+
+    function rerenderKeepingScroll() {
+      const y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+    }
+
+    function renderImages(host) {
+      const slots = page.media || [];
+      if (!slots.length) {
+        host.innerHTML = `<p class="empty-msg">This page has no replaceable images.<br/>Images inside sections (like team photos) are edited on the Content tab.</p>`;
+        return;
+      }
+      host.innerHTML = `<div class="section-title-row"><h4>Page images &amp; video · shared by both languages</h4></div><div class="media-grid"></div>`;
+      const grid = host.querySelector('.media-grid');
+      for (const slot of slots) {
+        const custom = draft.media[slot.key];
+        const url = custom || (slot.preview ? assetUrl(slot.preview) : '');
+        const card = document.createElement('div');
+        card.className = 'media-card' + (custom !== baseline.media[slot.key] ? ' dirty' : '');
+        const isVideo = slot.type === 'video';
+        card.innerHTML = `
+          <div class="frame">
+            ${url ? mediaTag(url, isVideo ? 'video/mp4' : '') : icon(isVideo ? 'video' : 'image')}
+            ${custom ? '<span class="pill pill-success">Custom</span>' : '<span class="pill">Default</span>'}
+          </div>
+          <div class="body">
+            <strong>${escapeHtml(slot.label)}</strong>
+            ${!custom && isVideo ? '<small class="default-hint">No video set — the site uses its built-in background.</small>' : ''}
+            <div class="btns">
+              <button class="btn btn-secondary btn-sm" type="button" data-act="pick">${icon('upload')} ${custom ? 'Replace' : 'Upload'}</button>
+              ${custom ? `<button class="btn btn-ghost btn-sm" type="button" data-act="reset">Use default</button>` : ''}
+            </div>
+          </div>`;
+        card.querySelector('[data-act="pick"]').onclick = async () => {
+          const picked = await pickFile({ accept: isVideo ? 'video' : 'image' });
+          if (picked) {
+            draft.media[slot.key] = picked;
+            render();
+          }
+        };
+        const reset = card.querySelector('[data-act="reset"]');
+        if (reset) reset.onclick = () => {
+          delete draft.media[slot.key];
+          render();
+        };
+        grid.appendChild(card);
+      }
+    }
+
+    async function renderVersions(host) {
+      host.innerHTML = '<div class="skeleton" style="height:160px"></div>';
+      const res = await apiFetch(`/admin/api/pages/${slug}/revisions`);
+      const { data } = await res.json();
+      host.innerHTML = `<div class="section-title-row"><h4>Saved versions</h4></div>`;
+      if (!data.length) {
+        host.insertAdjacentHTML('beforeend', '<p class="empty-msg">No saved versions yet. Every time you save, a version is kept here so you can roll back.</p>');
+        return;
+      }
+      data.forEach((rev, i) => {
+        const row = document.createElement('div');
+        row.className = 'revision';
+        row.innerHTML = `
+          <div class="stat-icon">${icon('history')}</div>
+          <div class="grow">
+            <strong>${escapeHtml(rev.note || 'Saved changes')}</strong>
+            <small>${escapeHtml(rev.created_by || 'unknown')} · ${timeAgo(rev.created_at)} · ${escapeHtml(rev.created_at)} UTC</small>
+          </div>
+          ${i === 0 ? '<span class="pill pill-success">Current</span>' : `<button class="btn btn-secondary btn-sm" type="button">${icon('reset')} Restore</button>`}`;
+        const btn = row.querySelector('button');
+        if (btn) btn.onclick = async () => {
+          const msg = dirtyCount()
+            ? 'Restore this version? Your unsaved changes will be lost.'
+            : 'Restore this version? The page will go back to how it was at that time.';
+          if (!(await confirmDialog(msg, { confirmLabel: 'Restore' }))) return;
+          await apiFetch(`/admin/api/pages/${slug}/revisions/${rev.id}/restore`, { method: 'POST' });
+          showToast('Version restored');
+          tab = 'content';
+          await load();
+        };
+        host.appendChild(row);
+      });
+    }
+
+    function renderOutline() {
+      const nav = document.getElementById('outline');
+      nav.innerHTML = page.sections
+        .map((s) => {
+          const dirty = sectionDirty('en', s.key) || sectionDirty('ar', s.key);
+          const custom = !same(draft.en[s.key], defaults.en[s.key]) || !same(draft.ar[s.key], defaults.ar[s.key]);
+          return `<a href="#section-${s.key}" data-key="${s.key}"><span class="dot ${dirty ? 'dirty' : custom ? 'saved' : ''}"></span>${escapeHtml(s.label)}</a>`;
+        })
+        .join('');
+      if ((page.media || []).length) {
+        nav.insertAdjacentHTML('beforeend', `<a href="#" data-tab-link="images"><span class="dot ${mediaDirty() ? 'dirty' : Object.keys(draft.media).length ? 'saved' : ''}"></span>Images &amp; video</a>`);
+      }
+      nav.querySelectorAll('a').forEach((a) => {
+        a.onclick = (e) => {
+          e.preventDefault();
+          if (a.dataset.tabLink) {
+            tab = a.dataset.tabLink;
+            return render();
+          }
+          tab = 'content';
+          collapsed.delete(a.dataset.key);
+          render();
+          document.getElementById(`section-${a.dataset.key}`)?.scrollIntoView({ behavior: 'smooth' });
+          history.replaceState(null, '', `#section-${a.dataset.key}`);
+        };
+      });
+    }
+
+    function refreshDirty() {
+      const n = dirtyCount();
+      document.getElementById('save-btn').disabled = !n || saving;
+      document.getElementById('save-bar').hidden = !n;
+      document.getElementById('dirty-summary').textContent = `${n} unsaved change${n === 1 ? '' : 's'} (sections across both languages)`;
+      document.querySelectorAll('.block').forEach((b) => {
+        const d = sectionDirty(lang, b.dataset.section);
+        b.classList.toggle('dirty', d);
+        b.querySelector('.unsaved').hidden = !d;
+      });
+      document.querySelectorAll('#outline a[data-key]').forEach((a) => {
+        const k = a.dataset.key;
+        const dirty = sectionDirty('en', k) || sectionDirty('ar', k);
+        const custom = !same(draft.en[k], defaults.en[k]) || !same(draft.ar[k], defaults.ar[k]);
+        a.querySelector('.dot').className = `dot ${dirty ? 'dirty' : custom ? 'saved' : ''}`;
+      });
+    }
+
+    // ---------- actions ----------
+    async function resetSection(section) {
+      const ok = await confirmDialog(
+        `Reset "${section.label}" (${LANG_LABEL[lang]}) to the website's original text? You can still discard before saving.`,
+        { confirmLabel: 'Reset section', danger: true }
+      );
+      if (!ok) return;
+      draft[lang][section.key] = clone(defaults[lang][section.key]);
+      rerenderKeepingScroll();
+    }
+
+    async function save({ thenPreview = false } = {}) {
+      if (saving || !dirtyCount()) return;
+      saving = true;
+      refreshDirty();
+      const sections = { en: {}, ar: {} };
+      const changedLabels = [];
+      for (const l of ['en', 'ar']) {
+        for (const s of page.sections) {
+          if (!sectionDirty(l, s.key)) continue;
+          sections[l][s.key] = same(draft[l][s.key], defaults[l][s.key]) ? null : draft[l][s.key];
+          changedLabels.push(`${s.label} (${l.toUpperCase()})`);
+        }
+      }
+      let media;
+      if (mediaDirty()) {
+        media = {};
+        const keys = new Set([...Object.keys(draft.media), ...Object.keys(baseline.media)]);
+        for (const k of keys) if (draft.media[k] !== baseline.media[k]) media[k] = draft.media[k] || null;
+        changedLabels.push('Images');
+      }
+      const note = `Updated ${changedLabels.slice(0, 3).join(', ')}${changedLabels.length > 3 ? ` +${changedLabels.length - 3} more` : ''}`;
+
+      try {
+        await apiJson(`/admin/api/pages/${slug}`, 'PUT', { sections, media, note });
+        baseline = clone(draft);
+        showToast('Changes saved — live on the website');
+        document.getElementById('last-updated').textContent = `Last saved just now by ${currentUser?.username || 'you'}`;
+        if (thenPreview) openPreview();
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        saving = false;
+        render();
+      }
+    }
+
+    async function discard() {
+      if (!dirtyCount()) return;
+      if (!(await confirmDialog('Discard all unsaved changes on this page?', { confirmLabel: 'Discard', danger: true }))) return;
+      draft = clone(baseline);
+      render();
+    }
+
+    async function resetPage() {
+      const ok = await confirmDialog(
+        'Reset every section and image on this page (both languages) to the website defaults? This saves immediately; you can undo it from Versions.',
+        { confirmLabel: 'Reset whole page', danger: true }
+      );
+      if (!ok) return;
+      const sections = { en: {}, ar: {} };
+      for (const l of ['en', 'ar']) for (const s of page.sections) sections[l][s.key] = null;
+      const media = Object.fromEntries(Object.keys(baseline.media).map((k) => [k, null]));
+      await apiJson(`/admin/api/pages/${slug}`, 'PUT', { sections, media, note: 'Reset page to defaults' });
+      showToast('Page reset to defaults');
+      await load();
+    }
+
+    function openPreview() {
+      window.open(origin.replace(/\/$/, '') + page.path, '_blank', 'noopener');
+    }
+
+    // ---------- wiring ----------
+    document.getElementById('crumb-sep').innerHTML = icon('chevronRight');
+    document.getElementById('preview-btn').innerHTML = `${icon('eye')} Preview`;
+    document.getElementById('save-btn').innerHTML = `${icon('save')} Save`;
+    document.getElementById('save-caret').innerHTML = icon('chevronDown');
+    document.querySelector('[data-action="save-preview"]').innerHTML = `${icon('eye')} Save &amp; preview`;
+    document.querySelector('[data-action="discard"]').innerHTML = `${icon('x')} Discard unsaved changes`;
+    document.querySelector('[data-action="reset-page"]').innerHTML = `${icon('reset')} Reset page to defaults`;
+    document.querySelector('[data-tab="content"]').innerHTML = `${icon('text')} Content`;
+    document.querySelector('[data-tab="images"]').innerHTML = `${icon('image')} Images`;
+    document.querySelector('[data-tab="versions"]').innerHTML = `${icon('history')} Versions`;
+    document.getElementById('tips').innerHTML = `
+      <p>${icon('keyboard')} Ctrl + S saves</p>
+      <p><span class="dot dirty" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent)"></span> Unsaved changes</p>
+      <p><span class="dot saved" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success)"></span> Customised (differs from default)</p>
+      <p>${icon('globe')} Edit Arabic with the language switch above</p>`;
+
+    document.getElementById('preview-btn').onclick = openPreview;
+    document.getElementById('save-btn').onclick = () => save();
+    document.getElementById('bar-save').onclick = () => save();
+    document.getElementById('bar-discard').onclick = discard;
+
+    const menu = document.getElementById('save-menu');
+    document.getElementById('save-caret').onclick = (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+    };
+    document.addEventListener('click', () => (menu.hidden = true));
+    menu.onclick = (e) => {
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'save-preview') save({ thenPreview: true });
+      if (action === 'discard') discard();
+      if (action === 'reset-page') resetPage();
+    };
+
+    document.getElementById('lang-switch').onclick = (e) => {
+      const l = e.target.closest('[data-lang]')?.dataset.lang;
+      if (!l || l === lang) return;
+      lang = l;
+      document.querySelectorAll('#lang-switch button').forEach((b) => b.classList.toggle('active', b.dataset.lang === lang));
+      rerenderKeepingScroll();
+    };
+    document.getElementById('tabs').onclick = (e) => {
+      const t = e.target.closest('[data-tab]')?.dataset.tab;
+      if (!t || t === tab) return;
+      tab = t;
+      render();
+    };
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
+      }
+    });
+    window.addEventListener('beforeunload', (e) => {
+      if (page && dirtyCount()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
+    (async () => {
+      const user = await requireSession();
+      if (!user) return;
+      renderNav('/page-edit.html');
+      if (!slug) return (location.href = '/pages.html');
+      await load();
+    })();
+  </script>
+</body>
+</html>

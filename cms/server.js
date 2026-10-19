@@ -14,10 +14,13 @@ import careersRoutes from './routes/careers.js';
 import mediaRoutes from './routes/media.js';
 import pagesRoutes from './routes/pages.js';
 import usersRoutes from './routes/users.js';
+import appointmentsRoutes from './routes/appointments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = process.env.PORT || 4000;
+// Behind Vercel's proxy: use the visitor's IP (for rate limiting), not the proxy's.
+app.set('trust proxy', true);
 
 // FRONTEND_ORIGIN may list several sites, comma-separated
 // (e.g. "https://example.com,https://www.example.com").
@@ -53,6 +56,7 @@ app.use(careersRoutes);
 app.use(mediaRoutes);
 app.use(pagesRoutes);
 app.use(usersRoutes);
+app.use(appointmentsRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

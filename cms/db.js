@@ -91,5 +91,37 @@ export async function initSchema() {
       created_by TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`,
+    // Site visit bookings from the website. Documents are private blobs,
+    // served only through the authenticated admin API.
+    `CREATE TABLE IF NOT EXISTS appointments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      full_name TEXT NOT NULL,
+      company_name TEXT NOT NULL,
+      id_type TEXT NOT NULL,
+      id_number TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      visit_date TEXT NOT NULL,
+      visit_time TEXT,
+      purpose TEXT,
+      vehicle_plate TEXT NOT NULL,
+      id_document_url TEXT,
+      vehicle_registration_url TEXT,
+      notes TEXT,
+      admin_notes TEXT,
+      locale TEXT DEFAULT 'en',
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
   ]);
+
+  // Columns added after the first release; SQLite has no ADD COLUMN IF NOT EXISTS.
+  const userColumns = await db.execute('PRAGMA table_info(admin_users)');
+  if (!userColumns.rows.some((c) => c.name === 'role')) {
+    await db.execute("ALTER TABLE admin_users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'");
+  }
 }

@@ -23,7 +23,14 @@ async function apiJson(path, method, body) {
   return data;
 }
 
-async function requireSession() {
+// Where each role lands after sign-in or when it opens a page it can't use.
+const ROLE_HOME = { admin: '/dashboard.html', appointments: '/appointments.html' };
+function homeFor(user) {
+  return ROLE_HOME[user?.role] || '/index.html';
+}
+
+// `roles` lists who may open the current page (administrators by default).
+async function requireSession(roles = ['admin']) {
   const res = await apiFetch('/admin/api/me');
   if (!res.ok) {
     window.location.href = '/index.html';
@@ -31,6 +38,10 @@ async function requireSession() {
   }
   const { user } = await res.json();
   currentUser = user;
+  if (!roles.includes(user.role)) {
+    window.location.href = homeFor(user);
+    return null;
+  }
   return user;
 }
 
@@ -113,6 +124,9 @@ const ICON_PATHS = {
   keyboard: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>',
   key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7l10-5Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/>',
 };
 
 function icon(name, cls = 'icon') {
@@ -120,8 +134,13 @@ function icon(name, cls = 'icon') {
 }
 
 // ---------- App shell ----------
+// Items are for administrators unless they list other `roles`.
 const NAV_GROUPS = [
   { label: 'Overview', items: [{ href: '/dashboard.html', label: 'Dashboard', icon: 'dashboard' }] },
+  {
+    label: 'Operations',
+    items: [{ href: '/appointments.html', label: 'Appointments', icon: 'calendar', roles: ['admin', 'appointments'] }],
+  },
   {
     label: 'Content',
     items: [
@@ -135,6 +154,13 @@ const NAV_GROUPS = [
   { label: 'Library', items: [{ href: '/files.html', label: 'Files', icon: 'files' }] },
   { label: 'Settings', items: [{ href: '/users.html', label: 'Users', icon: 'users' }] },
 ];
+
+function navGroupsFor(user) {
+  const role = user?.role || 'admin';
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => (i.roles || ['admin']).includes(role)) })).filter(
+    (g) => g.items.length
+  );
+}
 
 const FRONTEND_ORIGIN_KEY = 'sdes_cms_frontend_origin';
 function frontendOrigin() {
@@ -156,16 +182,17 @@ function renderNav(active) {
   if (!mount) return;
   const path = active || window.location.pathname;
   const user = currentUser?.username || '';
+  const isAdmin = (currentUser?.role || 'admin') === 'admin';
 
   const shell = document.createElement('div');
   shell.className = 'shell';
   shell.innerHTML = `
     <aside class="sidebar" aria-label="Main navigation">
-      <a class="brand" href="/dashboard.html">
+      <a class="brand" href="${homeFor(currentUser) === '/index.html' ? '/dashboard.html' : homeFor(currentUser)}">
         <div class="brand-mark"><img src="/img/logo-mark.png" alt="SDES logo" /></div>
         <div class="brand-text"><strong>SDES</strong><span>Content Manager</span></div>
       </a>
-      ${NAV_GROUPS.map(
+      ${navGroupsFor(currentUser).map(
         (g) => `
         <div class="nav-group">
           <div class="nav-label">${g.label}</div>
@@ -179,7 +206,7 @@ function renderNav(active) {
       ).join('')}
       <div class="sidebar-foot">
         <div class="site-card">
-          <p>Saved changes show on the website the next time a page is loaded.</p>
+          ${isAdmin ? '<p>Saved changes show on the website the next time a page is loaded.</p>' : ''}
           <a href="${escapeHtml(frontendOrigin())}" target="_blank" rel="noopener" id="view-site-link">${icon('external')} View website</a>
         </div>
       </div>
@@ -190,7 +217,7 @@ function renderNav(active) {
         <button class="icon-btn menu-btn" id="menu-btn" aria-label="Open menu">${icon('menu')}</button>
         <div class="search">
           ${icon('search')}
-          <input type="search" id="global-search" placeholder="Search pages, sections…" autocomplete="off" />
+          <input type="search" id="global-search" placeholder="${isAdmin ? 'Search pages, sections…' : 'Search…'}" autocomplete="off" />
           <div class="search-results" id="search-results" hidden></div>
         </div>
         <div class="topbar-actions">
@@ -202,7 +229,7 @@ function renderNav(active) {
               ${icon('chevronDown')}
             </button>
             <div class="user-dropdown" id="user-dropdown" hidden>
-              <a href="/users.html">${icon('key')} Users &amp; passwords</a>
+              ${isAdmin ? `<a href="/users.html">${icon('key')} Users &amp; passwords</a>` : ''}
               <button type="button" onclick="logout()">${icon('logout')} Log out</button>
             </div>
           </div>
@@ -243,9 +270,10 @@ function updateSiteLinks(origin) {
 let searchIndex = null;
 
 async function buildSearchIndex() {
-  const index = NAV_GROUPS.flatMap((g) =>
+  const index = navGroupsFor(currentUser).flatMap((g) =>
     g.items.map((i) => ({ label: i.label, hint: g.label, href: i.href }))
   );
+  if ((currentUser?.role || 'admin') !== 'admin') return index;
   try {
     const res = await apiFetch('/admin/api/pages');
     const { data, frontendOrigin: origin } = await res.json();

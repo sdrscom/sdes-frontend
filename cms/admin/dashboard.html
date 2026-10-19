@@ -51,7 +51,8 @@
       const titles = Object.fromEntries(pages.map((p) => [p.slug, p.title]));
 
       const tiles = [
-        { n: pages.length, label: 'Website pages', icon: 'pages', href: '/pages.html', orange: true },
+        { n: stats.pendingAppointments, label: 'Pending appointments', icon: 'calendar', href: '/appointments.html', orange: true },
+        { n: pages.length, label: 'Website pages', icon: 'pages', href: '/pages.html' },
         { n: stats.news, label: 'News articles', icon: 'news', href: '/news.html' },
         { n: stats.gallery, label: 'Gallery images', icon: 'gallery', href: '/gallery.html' },
         { n: stats.jobs, label: 'Job postings', icon: 'careers', href: '/careers.html' },

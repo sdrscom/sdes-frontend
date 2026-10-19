@@ -32,7 +32,7 @@
   <script>
     (async () => {
       const res = await fetch('/admin/api/me', { credentials: 'include' });
-      if (res.ok) window.location.href = '/dashboard.html';
+      if (res.ok) window.location.href = homeFor((await res.json()).user);
     })();
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -51,7 +51,7 @@
       });
 
       if (res.ok) {
-        window.location.href = '/dashboard.html';
+        window.location.href = homeFor((await res.json()).user);
       } else {
         const data = await res.json().catch(() => ({}));
         errorEl.textContent = data.error || 'Login failed';

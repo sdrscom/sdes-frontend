@@ -1,10 +1,15 @@
+import { useCallback, useState } from "react";
+import { CalendarCheck } from "lucide-react";
 import Pattern from "../Pattern/Pattern";
 import { useTranslation } from "react-i18next";
 import { useMedia } from "../../cms/useMedia";
+import BookAppointmentModal from "../Appointment/BookAppointmentModal";
 
 export default function Hero() {
   const { t } = useTranslation();
   const media = useMedia();
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const closeBooking = useCallback(() => setBookingOpen(false), []);
 
   const video = media("home.heroVideo");
   const title = t("hero.title");
@@ -81,16 +86,20 @@ export default function Hero() {
               >
                 <span className="tracking-widest">{t("hero.services")}</span>
               </a>
-              <a
-                href="/track"
-                className="border border-white/70 hover:bg-white hover:text-[#1A2347] transition-all duration-300 py-3 lg:py-3.5 text-white uppercase px-6 lg:px-8 text-sm sm:text-base shadow-lg hover:shadow-xl hover:scale-105 transform w-full sm:w-auto inline-flex items-center justify-center"
+              <button
+                type="button"
+                onClick={() => setBookingOpen(true)}
+                className="border border-white/70 hover:bg-white hover:text-[#1A2347] transition-all duration-300 py-3 lg:py-3.5 text-white uppercase px-6 lg:px-8 text-sm sm:text-base shadow-lg hover:shadow-xl hover:scale-105 transform w-full sm:w-auto inline-flex items-center justify-center gap-2"
               >
-                <span className="tracking-widest">{t("hero.trackCargo")}</span>
-              </a>
+                <CalendarCheck className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="tracking-widest">{t("hero.bookAppointment")}</span>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {bookingOpen && <BookAppointmentModal onClose={closeBooking} />}
     </section>
   );
 }

@@ -429,6 +429,7 @@ tbody tr:hover td { background: var(--surface-2); }
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 600;
+  white-space: nowrap;
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-dim);

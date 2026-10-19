@@ -14,6 +14,7 @@ export const PAGES = [
       { key: 'taxBenefits', label: 'Cost & tax benefits' },
       { key: 'fasterClearance', label: 'Faster clearance' },
       { key: 'streamlinedOperations', label: 'Streamlined operations' },
+      { key: 'appointment', label: 'Book an appointment (popup form)' },
     ],
     media: [
       { key: 'home.heroImage', label: 'Hero background image', preview: '/hero-bg2.jpg' },

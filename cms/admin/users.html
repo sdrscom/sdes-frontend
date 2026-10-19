@@ -23,7 +23,7 @@
         <h3>All users</h3>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>User</th><th>Added</th><th></th></tr></thead>
+            <thead><tr><th>User</th><th>Role</th><th>Added</th><th></th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
@@ -36,6 +36,9 @@
           <input type="text" id="username" autocomplete="off" required />
           <label for="password">Password (at least 8 characters)</label>
           <input type="password" id="password" autocomplete="new-password" minlength="8" required />
+          <label for="role">Role</label>
+          <select id="role"></select>
+          <p class="subtitle" id="role-hint" style="margin:6px 0 0;font-size:0.82rem"></p>
           <button class="btn" type="submit" style="margin-top:18px">Add user</button>
           <p class="form-error" id="add-error" hidden></p>
         </form>
@@ -45,9 +48,32 @@
 
   <script src="/js/api.js"></script>
   <script>
+    const ROLE_HINTS = {
+      admin: 'Full access: pages, news, gallery, careers, appointments and users.',
+      appointments: 'Appointments only: can view and process site-visit bookings. Cannot edit the website or manage users.',
+    };
+    let roles = {};
+    let users = [];
+
+    function roleOptions(selected) {
+      return Object.entries(roles)
+        .map(([key, label]) => `<option value="${key}"${key === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+        .join('');
+    }
+
     async function load() {
       const res = await apiFetch('/admin/api/users');
-      const { data, currentUserId } = await res.json();
+      const body = await res.json();
+      const { data, currentUserId } = body;
+      users = data;
+      if (!Object.keys(roles).length) {
+        roles = body.roles;
+        const select = document.getElementById('role');
+        select.innerHTML = roleOptions('admin');
+        const hint = () => (document.getElementById('role-hint').textContent = ROLE_HINTS[select.value] || '');
+        select.onchange = hint;
+        hint();
+      }
       document.getElementById('rows').innerHTML = data
         .map((u) => {
           const me = Number(u.id) === Number(currentUserId);
@@ -55,8 +81,10 @@
           <tr>
             <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar">${escapeHtml(u.username.slice(0, 2))}</span>
               <strong>${escapeHtml(u.username)}</strong>${me ? '<span class="pill pill-success">You</span>' : ''}</div></td>
+            <td><span class="pill${u.role === 'admin' ? '' : ' pill-warn'}">${escapeHtml(roles[u.role] || u.role)}</span></td>
             <td>${u.created_at ? new Date(u.created_at.replace(' ', 'T') + 'Z').toLocaleDateString() : ''}</td>
             <td class="actions-cell">
+              ${me ? '' : `<button class="btn btn-sm btn-secondary" data-role="${u.id}">${icon('users')} Role</button>`}
               <button class="btn btn-sm btn-secondary" data-pw="${u.id}" data-name="${escapeHtml(u.username)}">${icon('key')} Password</button>
               ${me ? '' : `<button class="btn btn-sm btn-danger" data-del="${u.id}" data-name="${escapeHtml(u.username)}">${icon('trash')}</button>`}
             </td>
@@ -64,8 +92,38 @@
         })
         .join('');
 
+      document.querySelectorAll('[data-role]').forEach((b) => (b.onclick = () => changeRole(b.dataset.role)));
       document.querySelectorAll('[data-pw]').forEach((b) => (b.onclick = () => changePassword(b.dataset.pw, b.dataset.name)));
       document.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => removeUser(b.dataset.del, b.dataset.name)));
+    }
+
+    function changeRole(id) {
+      const u = users.find((x) => String(x.id) === String(id));
+      const modal = openModal({
+        title: `Role for ${u.username}`,
+        small: true,
+        body: `<label for="edit-role" style="margin-top:0">Role</label>
+               <select id="edit-role">${roleOptions(u.role)}</select>
+               <p class="subtitle" id="edit-role-hint" style="margin:8px 0 0;font-size:0.82rem"></p>
+               <p class="form-error" id="role-error" hidden></p>`,
+        footer: `<button class="btn btn-secondary" data-close>Cancel</button><button class="btn" id="role-save">Save role</button>`,
+      });
+      const select = modal.el.querySelector('#edit-role');
+      const hint = () => (modal.el.querySelector('#edit-role-hint').textContent = ROLE_HINTS[select.value] || '');
+      select.onchange = hint;
+      hint();
+      modal.el.querySelector('#role-save').onclick = async () => {
+        try {
+          await apiJson(`/admin/api/users/${id}/role`, 'PUT', { role: select.value });
+          modal.close();
+          showToast('Role updated');
+          load();
+        } catch (err) {
+          const e = modal.el.querySelector('#role-error');
+          e.textContent = err.message;
+          e.hidden = false;
+        }
+      };
     }
 
     function changePassword(id, name) {
@@ -109,8 +167,10 @@
         await apiJson('/admin/api/users', 'POST', {
           username: document.getElementById('username').value,
           password: document.getElementById('password').value,
+          role: document.getElementById('role').value,
         });
         e.target.reset();
+        document.getElementById('role').dispatchEvent(new Event('change'));
         showToast('User added');
         load();
       } catch (ex) {

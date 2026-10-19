@@ -19,10 +19,14 @@ router.post('/admin/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/admin/api/me', (req, res) => {
-  const user = getSessionUser(req);
-  if (!user) return res.status(401).json({ error: 'Not authenticated' });
-  res.json({ user });
+router.get('/admin/api/me', async (req, res, next) => {
+  try {
+    const user = await getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

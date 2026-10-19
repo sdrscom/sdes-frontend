@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SDES CMS | Appointments</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  .pill-danger { background: var(--danger-bg); border-color: #f6c9ca; color: var(--danger); }
+  .pill-info { background: #eef1fa; border-color: #d5dcef; color: var(--navy-700); }
+  .apt-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .apt-toolbar .filters { display: flex; flex-wrap: wrap; gap: 10px; }
+  .apt-toolbar input, .apt-toolbar select { margin: 0; width: auto; min-width: 180px; }
+  .apt-card .tabs { padding: 0 16px; }
+  .apt-table td { vertical-align: top; }
+  .apt-table tr.clickable { cursor: pointer; }
+  .apt-table tr.clickable:hover td { background: var(--surface-2); }
+  .apt-sub { display: block; color: var(--text-dim); font-size: 0.8rem; margin-top: 2px; }
+  .apt-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; font-weight: 600; }
+  .apt-today { color: var(--accent); font-weight: 600; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; }
+  .detail-grid .full { grid-column: 1 / -1; }
+  .detail-grid dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); font-weight: 600; }
+  .detail-grid dd { margin: 2px 0 0; font-weight: 500; word-break: break-word; }
+  .detail-section { margin-top: 22px; }
+  .detail-section:first-child { margin-top: 0; }
+  .detail-section h4 { margin: 0 0 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--navy-700); }
+  .doc-links { display: flex; flex-wrap: wrap; gap: 10px; }
+  .status-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .audit { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+  @media (max-width: 640px) { .detail-grid { grid-template-columns: 1fr; } .apt-toolbar input, .apt-toolbar select { min-width: 0; width: 100%; } }
+</style>
+</head>
+<body>
+  <div id="app-nav"></div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Appointments</h1>
+        <p class="subtitle">Site-visit bookings made on the website. Review each request, check the documents, then approve or reject it.</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary" id="export-btn" type="button"></button>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="stats"></div>
+
+    <div class="card apt-card" style="padding:0">
+      <div class="tabs" id="status-tabs"></div>
+      <div class="apt-toolbar">
+        <div class="filters">
+          <input type="search" id="search" placeholder="Search name, company, reference, plate or ID" autocomplete="off" />
+          <select id="when">
+            <option value="all">Any visit date</option>
+            <option value="today">Visiting today</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="past">Past visits</option>
+          </select>
+        </div>
+        <span class="subtitle" id="result-count" style="margin:0"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="apt-table">
+          <thead>
+            <tr><th>Reference</th><th>Visitor</th><th>Visit</th><th>Vehicle</th><th>Status</th><th>Received</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-msg" id="empty-msg" hidden></p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const STATUS = {
+      pending: { label: 'Pending review', pill: 'pill-warn' },
+      approved: { label: 'Approved', pill: 'pill-success' },
+      completed: { label: 'Visit completed', pill: 'pill-info' },
+      rejected: { label: 'Rejected', pill: 'pill-danger' },
+      cancelled: { label: 'Cancelled', pill: '' },
+    };
+    const ID_TYPES = { national_id: 'National ID', iqama: 'Iqama (Resident ID)', passport: 'Passport' };
+
+    let items = [];
+    let tab = 'pending';
+
+    const todayRiyadh = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+    const fmtVisitDate = (d) =>
+      d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const fmtStamp = (s) => (s ? new Date(String(s).replace(' ', 'T') + 'Z').toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+    const statusPill = (s) => `<span class="pill ${STATUS[s]?.pill || ''}">${escapeHtml(STATUS[s]?.label || s)}</span>`;
+
+    async function load() {
+      const res = await apiFetch('/admin/api/appointments');
+      items = (await res.json()).data;
+      render();
+    }
+
+    function filtered() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const when = document.getElementById('when').value;
+      const today = todayRiyadh();
+      return items.filter((a) => {
+        if (tab !== 'all' && a.status !== tab) return false;
+        if (when === 'today' && a.visit_date !== today) return false;
+        if (when === 'upcoming' && a.visit_date < today) return false;
+        if (when === 'past' && a.visit_date >= today) return false;
+        if (!q) return true;
+        return [a.reference, a.full_name, a.company_name, a.vehicle_plate, a.id_number, a.email, a.phone]
+          .some((v) => String(v || '').toLowerCase().includes(q));
+      });
+    }
+
+    function render() {
+      const today = todayRiyadh();
+      const count = (fn) => items.filter(fn).length;
+      const tiles = [
+        { n: count((a) => a.status === 'pending'), label: 'Waiting for review', icon: 'calendar', orange: true },
+        { n: count((a) => a.visit_date === today && a.status === 'approved'), label: 'Approved visits today', icon: 'check' },
+        { n: count((a) => a.visit_date > today && a.status === 'approved'), label: 'Upcoming approved', icon: 'calendar' },
+        { n: items.length, label: 'All bookings', icon: 'layers' },
+      ];
+      document.getElementById('stats').innerHTML = tiles
+        .map((t) => `<div class="stat"><div class="stat-icon${t.orange ? ' orange' : ''}">${icon(t.icon)}</div><div><strong>${t.n}</strong><span>${t.label}</span></div></div>`)
+        .join('');
+
+      const tabs = [['all', 'All'], ...Object.entries(STATUS).map(([k, v]) => [k, v.label])];
+      document.getElementById('status-tabs').innerHTML = tabs
+        .map(([key, label]) => {
+          const n = key === 'all' ? items.length : count((a) => a.status === key);
+          return `<button type="button" class="${key === tab ? 'active' : ''}" data-tab="${key}">${escapeHtml(label)} <span class="count">${n}</span></button>`;
+        })
+        .join('');
+      document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
+
+      const rows = filtered();
+      document.getElementById('result-count').textContent = `${rows.length} booking${rows.length === 1 ? '' : 's'}`;
+      const empty = document.getElementById('empty-msg');
+      empty.hidden = rows.length > 0;
+      empty.textContent = items.length ? 'No bookings match these filters.' : 'No bookings yet. Requests from the website appear here.';
+
+      document.getElementById('rows').innerHTML = rows
+        .map(
+          (a) => `
+          <tr class="clickable" data-id="${a.id}">
+            <td><span class="apt-ref">${escapeHtml(a.reference)}</span></td>
+            <td><strong>${escapeHtml(a.full_name)}</strong><span class="apt-sub">${escapeHtml(a.company_name)}</span></td>
+            <td><span class="${a.visit_date === today ? 'apt-today' : ''}">${escapeHtml(fmtVisitDate(a.visit_date))}${a.visit_date === today ? ' · Today' : ''}</span>
+                <span class="apt-sub">${escapeHtml([a.visit_time, a.purpose].filter(Boolean).join(' · '))}</span></td>
+            <td><span class="apt-ref">${escapeHtml(a.vehicle_plate)}</span></td>
+            <td>${statusPill(a.status)}</td>
+            <td><span class="apt-sub" style="margin:0">${escapeHtml(timeAgo(a.created_at))}</span></td>
+          </tr>`
+        )
+        .join('');
+      document.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => openDetail(tr.dataset.id)));
+    }
+
+    function openDetail(id) {
+      const a = items.find((x) => String(x.id) === String(id));
+      const isAdmin = currentUser.role === 'admin';
+      const field = (label, value, full = false) =>
+        `<div${full ? ' class="full"' : ''}><dt>${label}</dt><dd>${value ? escapeHtml(value) : '<span class="apt-sub" style="margin:0">—</span>'}</dd></div>`;
+      const fileUrl = (kind) => `/admin/api/appointments/${a.id}/files/${kind}`;
+
+      const actions = {
+        pending: [['approved', 'Approve', ''], ['rejected', 'Reject', 'btn-danger']],
+        approved: [['completed', 'Mark visit completed', ''], ['cancelled', 'Cancel visit', 'btn-secondary']],
+        rejected: [['pending', 'Move back to review', 'btn-secondary']],
+        completed: [],
+        cancelled: [['pending', 'Move back to review', 'btn-secondary']],
+      }[a.status] || [];
+
+      const modal = openModal({
+        title: `Booking ${a.reference}`,
+        body: `
+          <div class="detail-section">
+            <div class="status-row">${statusPill(a.status)}${actions
+              .map(([s, label, cls]) => `<button class="btn btn-sm ${cls}" data-status="${s}">${label}</button>`)
+              .join('')}</div>
+            ${a.reviewed_by ? `<p class="audit">Last status change by <strong>${escapeHtml(a.reviewed_by)}</strong> · ${escapeHtml(fmtStamp(a.reviewed_at))}</p>` : ''}
+          </div>
+          <div class="detail-section"><h4>Visitor</h4><dl class="detail-grid">
+            ${field('Full name', a.full_name)}${field('Company', a.company_name)}
+            ${field('ID type', ID_TYPES[a.id_type] || a.id_type)}${field('ID number', a.id_number)}
+            ${field('Mobile', a.phone)}${field('Email', a.email)}
+          </dl></div>
+          <div class="detail-section"><h4>Visit</h4><dl class="detail-grid">
+            ${field('Date of visit', fmtVisitDate(a.visit_date))}${field('Preferred time', a.visit_time)}
+            ${field('Purpose of visit', a.purpose, true)}
+            ${field('Visitor notes', a.notes, true)}
+          </dl></div>
+          <div class="detail-section"><h4>Vehicle &amp; documents</h4><dl class="detail-grid">
+            ${field('Vehicle plate number', a.vehicle_plate, true)}
+          </dl>
+            <div class="doc-links" style="margin-top:12px">
+              ${a.id_document_url ? `<a class="btn btn-sm btn-secondary" href="${fileUrl('id')}" target="_blank" rel="noopener">${icon('file')} ID document</a>` : ''}
+              ${a.vehicle_registration_url ? `<a class="btn btn-sm btn-secondary" href="${fileUrl('vehicle')}" target="_blank" rel="noopener">${icon('file')} Vehicle registration</a>` : ''}
+            </div>
+          </div>
+          <div class="detail-section"><h4>Internal notes</h4>
+            <textarea id="admin-notes" rows="3" placeholder="Visible to CMS staff only, e.g. gate number, escort, reason for rejection">${escapeHtml(a.admin_notes || '')}</textarea>
+          </div>
+          <p class="audit">Received ${escapeHtml(fmtStamp(a.created_at))} · Submitted in ${a.locale === 'ar' ? 'Arabic' : 'English'}</p>`,
+        footer: `
+          ${isAdmin ? `<button class="btn btn-ghost" id="delete-btn" style="margin-right:auto;color:var(--danger)">${icon('trash')} Delete</button>` : ''}
+          <button class="btn btn-secondary" data-close>Close</button>
+          <button class="btn" id="save-notes">Save notes</button>`,
+      });
+
+      const save = async (body, message) => {
+        try {
+          await apiJson(`/admin/api/appointments/${a.id}`, 'PUT', body);
+          showToast(message);
+          modal.close();
+          await load();
+        } catch (err) {
+          showToast(err.message, true);
+        }
+      };
+      modal.el.querySelectorAll('[data-status]').forEach((b) => {
+        b.onclick = () =>
+          save(
+            { status: b.dataset.status, adminNotes: modal.el.querySelector('#admin-notes').value },
+            `Marked as ${STATUS[b.dataset.status].label.toLowerCase()}`
+          );
+      });
+      modal.el.querySelector('#save-notes').onclick = () =>
+        save({ adminNotes: modal.el.querySelector('#admin-notes').value }, 'Notes saved');
+      const del = modal.el.querySelector('#delete-btn');
+      if (del) {
+        del.onclick = async () => {
+          if (!(await confirmDialog(`Permanently delete booking ${a.reference} and its documents?`, { confirmLabel: 'Delete', danger: true }))) return;
+          const res = await apiFetch(`/admin/api/appointments/${a.id}`, { method: 'DELETE' });
+          if (!res.ok) return showToast('Could not delete booking', true);
+          showToast('Booking deleted');
+          modal.close();
+          load();
+        };
+      }
+    }
+
+    // CSV of the rows currently shown. Cells starting with = + - @ are
+    // prefixed so spreadsheet apps don't run them as formulas.
+    function exportCsv() {
+      const cols = [
+        ['Reference', 'reference'], ['Status', (a) => STATUS[a.status]?.label || a.status], ['Full name', 'full_name'],
+        ['Company', 'company_name'], ['ID type', (a) => ID_TYPES[a.id_type] || a.id_type], ['ID number', 'id_number'],
+        ['Mobile', 'phone'], ['Email', 'email'], ['Visit date', 'visit_date'], ['Preferred time', 'visit_time'],
+        ['Purpose', 'purpose'], ['Vehicle plate', 'vehicle_plate'], ['Visitor notes', 'notes'],
+        ['Internal notes', 'admin_notes'], ['Received', 'created_at'],
+      ];
+      const cell = (v) => {
+        let s = String(v ?? '');
+        if (/^[=+\-@]/.test(s)) s = "'" + s;
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+      const rows = filtered().map((a) => cols.map(([, k]) => cell(typeof k === 'function' ? k(a) : a[k])).join(','));
+      const csv = '﻿' + [cols.map(([h]) => cell(h)).join(','), ...rows].join('\r\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      link.download = `appointments-${todayRiyadh()}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    document.getElementById('export-btn').innerHTML = `${icon('download')} Export CSV`;
+    document.getElementById('export-btn').onclick = exportCsv;
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('when').addEventListener('change', render);
+
+    (async () => {
+      const user = await requireSession(['admin', 'appointments']);
+      if (user) {
+        renderNav('/appointments.html');
+        load();
+      }
+    })();
+  </script>
+</body>
+</html>

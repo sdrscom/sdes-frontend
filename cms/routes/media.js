@@ -9,6 +9,9 @@ const router = Router();
 // token. The pathname is always one we generated ourselves at upload time.
 router.get('/media/*', async (req, res) => {
   const pathname = req.params[0];
+  // Visitor ID and vehicle documents are only served through the
+  // authenticated appointments API.
+  if (/(^|\/)appointments\//i.test(pathname) || pathname.includes('..')) return res.status(404).end();
   try {
     const result = await get(pathname, {
       access: 'private',

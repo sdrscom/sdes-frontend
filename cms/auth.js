@@ -4,6 +4,12 @@ import { db } from './db.js';
 
 const COOKIE_NAME = 'sdes_cms_session';
 
+// 'admin' manages everything; 'appointments' only sees site-visit bookings.
+export const ROLES = {
+  admin: 'Administrator',
+  appointments: 'Appointments officer',
+};
+
 export async function seedAdminUser() {
   const username = process.env.ADMIN_USERNAME;
   const password = process.env.ADMIN_PASSWORD;
@@ -25,7 +31,7 @@ export async function seedAdminUser() {
 
 export async function verifyLogin(username, password) {
   const result = await db.execute({
-    sql: 'SELECT id, username, password_hash FROM admin_users WHERE username = ?',
+    sql: 'SELECT id, username, password_hash, role FROM admin_users WHERE username = ?',
     args: [username],
   });
   const user = result.rows[0];
@@ -34,7 +40,26 @@ export async function verifyLogin(username, password) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return null;
 
-  return { id: user.id, username: user.username };
+  return { id: user.id, username: user.username, role: user.role };
+}
+
+// The role is read from the database on every request (not trusted from the
+// cookie), so a role change or removed user takes effect immediately.
+async function loadSessionUser(req) {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) return null;
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+  const result = await db.execute({
+    sql: 'SELECT id, username, role FROM admin_users WHERE id = ?',
+    args: [payload.sub],
+  });
+  const row = result.rows[0];
+  return row ? { sub: row.id, id: row.id, username: row.username, role: row.role } : null;
 }
 
 export function issueSessionCookie(res, user) {
@@ -53,24 +78,25 @@ export function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME);
 }
 
-export function requireAuth(req, res, next) {
-  const token = req.cookies?.[COOKIE_NAME];
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired session' });
-  }
+// Allows signed-in users whose role is one of `roles`.
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    loadSessionUser(req)
+      .then((user) => {
+        if (!user) return res.status(401).json({ error: 'Not authenticated' });
+        if (!roles.includes(user.role)) {
+          return res.status(403).json({ error: "Your account doesn't have access to this section" });
+        }
+        req.user = user;
+        next();
+      })
+      .catch(next);
+  };
 }
 
+// Default guard for admin routes: administrators only.
+export const requireAuth = requireRole('admin');
+
 export function getSessionUser(req) {
-  const token = req.cookies?.[COOKIE_NAME];
-  if (!token) return null;
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    return null;
-  }
+  return loadSessionUser(req);
 }

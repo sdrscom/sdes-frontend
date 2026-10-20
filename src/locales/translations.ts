@@ -65,7 +65,7 @@ export const translations = {
         notes: "Additional notes (optional)",
       },
       placeholders: {
-        fullName: "e.g. Mohammed Abdullah Al-Qahtani",
+        fullName: "e.g. Mohammed",
         companyName: "e.g. Gulf Trading Co.",
         idNumber: "10-digit number",
         passportNumber: "Passport number",
@@ -80,7 +80,8 @@ export const translations = {
         iqama: "Iqama (Resident ID)",
         passport: "Passport",
       },
-      timeSlots: ["Morning (8:00 AM – 12:00 PM)", "Afternoon (12:00 PM – 4:00 PM)"],
+      // Operations run 24 hours: day and night shifts.
+      timeSlots: ["Day (7:00 AM – 5:00 PM)", "Night (5:00 PM – 7:00 AM)"],
       purposes: [
         "Cargo collection",
         "Cargo delivery",
@@ -1012,7 +1013,7 @@ export const translations = {
         notes: "ملاحظات إضافية (اختياري)",
       },
       placeholders: {
-        fullName: "مثال: محمد عبدالله القحطاني",
+        fullName: "مثال: محمد",
         companyName: "مثال: شركة الخليج للتجارة",
         idNumber: "رقم مكوّن من 10 أرقام",
         passportNumber: "رقم جواز السفر",
@@ -1027,7 +1028,7 @@ export const translations = {
         iqama: "الإقامة",
         passport: "جواز السفر",
       },
-      timeSlots: ["صباحاً (8:00 ص – 12:00 م)", "مساءً (12:00 م – 4:00 م)"],
+      timeSlots: ["نهاراً (7:00 ص – 5:00 م)", "ليلاً (5:00 م – 7:00 ص)"],
       purposes: [
         "استلام بضائع",
         "تسليم بضائع",

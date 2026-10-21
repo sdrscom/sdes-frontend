@@ -78,7 +78,7 @@ function logTokenUsage(kind, response, startedAt) {
 // fit inside Vercel's 30s cap.
 const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest';
-const GEMINI_ATTEMPT_MS = 12000;
+const GEMINI_ATTEMPT_MS = 4000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {

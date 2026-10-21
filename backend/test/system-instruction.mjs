@@ -58,6 +58,8 @@ assert.match(sentInstruction, /CMS-only/);
 assert.match(sentInstruction, /Greetings and small talk/);
 assert.match(sentInstruction, /Do not use bullets.*for these/);
 assert.match(sentInstruction, /Do not open with a marketing slogan/);
+assert.match(sentInstruction, /facitioites/);
+assert.match(sentInstruction, /a little short/);
 assert.equal(reply, 'I am the SDRS Intelligent Trade Assistant.');
 assert.deepEqual(readFunctionCalls(result.response), []);
 assert.equal(typeof result.response.functionCalls, 'function');

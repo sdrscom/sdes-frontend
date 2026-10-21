@@ -71,14 +71,15 @@ function logTokenUsage(kind, response, startedAt) {
     console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
 }
 
-// vercel.json sets maxDuration to 30s. New Gemini keys must use 3.8-flash, but
-// that model has been returning 503 "high demand" (or hanging until a long
-// timeout). Don't wait the full window on a packed model — try it briefly,
-// then a lighter alias on a different capacity pool, so both attempts still
-// fit inside Vercel's 30s cap.
-const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest';
-const GEMINI_ATTEMPT_MS = 4000;
+// vercel.json sets maxDuration to 30s. gemini-3.8-flash is the model Google
+// requires for new keys, but it has been 503/hanging, and a 4s cutoff was too
+// short for a real "about SDRS / services" answer — both attempts timed out
+// and the widget showed "took longer than expected". Use Lite first (different
+// capacity pool, usually a few seconds), keep 3.8 as backup, and give each
+// attempt 10s so a normal commercial reply can finish.
+const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
+const GEMINI_ATTEMPT_MS = 10000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {

@@ -32,7 +32,7 @@ globalThis.fetch = async (url, init) => {
 
 const systemInstruction = loadKnowledgeBase();
 const model = new GoogleGenerativeAI('test-key').getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     systemInstruction,
     tools: chatbotTools,
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
@@ -92,7 +92,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
 const blockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
     .startChat({ history: [] })
     .sendMessage('Tell me about Facilities');
 
@@ -106,7 +106,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
 const fullyBlockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
     .startChat({ history: [] })
     .sendMessage('How are you');
 

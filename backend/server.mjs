@@ -109,7 +109,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         }
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             systemInstruction: systemInstruction,
             tools: chatbotTools,
             // Casual and short factual replies don't need extended internal reasoning.
@@ -201,7 +201,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const mimeType = audioBase64.split(';')[0].split(':')[1];
 
         const voiceModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             systemInstruction: systemInstruction,
             generationConfig: {
                 responseMimeType: 'application/json',

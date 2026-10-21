@@ -5,7 +5,7 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
-import { TimeoutError, withTimeout, isRetryableError, withSingleRetry } from '../reliability.js';
+import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback } from '../reliability.js';
 
 const calls = [];
 
@@ -277,6 +277,23 @@ await assert.rejects(
 );
 assert.equal(quotaAttempts, 1, 'withSingleRetry must not retry a 429, only call the function once');
 
+assert.equal(isBusyError(new TimeoutError('slow')), true, 'a hung Gemini call should fall back to another model');
+assert.equal(isBusyError({ status: 503 }), true, 'a 503 high-demand error should fall back to another model');
+assert.equal(isBusyError({ status: 400 }), false, 'a bad request must not be retried on a different model');
+
+const triedModels = [];
+const fallbackReply = await withModelFallback(['gemini-3.8-flash', 'gemini-flash-lite-latest'], async (modelName) => {
+    triedModels.push(modelName);
+    if (modelName === 'gemini-3.8-flash') {
+        const e = new Error('high demand');
+        e.status = 503;
+        throw e;
+    }
+    return 'ok-from-lite';
+});
+assert.equal(fallbackReply, 'ok-from-lite', 'withModelFallback must use the next model after a 503');
+assert.deepEqual(triedModels, ['gemini-3.8-flash', 'gemini-flash-lite-latest'], 'withModelFallback must try primary then fallback');
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
 console.log('Malformed or non-alternating history no longer crashes /api/chat.');
@@ -285,3 +302,4 @@ console.log('Empty, oversized, and malformed /api/chat requests are rejected bef
 console.log('Conversation history is capped instead of growing forever.');
 console.log('Stuck Gemini calls time out cleanly instead of hanging until the platform kills the function.');
 console.log('Only genuinely transient errors are retried; quota, bad-request, and timeout errors are not.');
+console.log('A busy or hung Gemini model falls back to a lighter model instead of waiting out the full timeout.');

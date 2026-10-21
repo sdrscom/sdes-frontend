@@ -5,7 +5,7 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
-import { TimeoutError, withTimeout, isRetryableError, withSingleRetry } from '../reliability.js';
+import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback, thinkingConfigForModel } from '../reliability.js';
 
 const calls = [];
 
@@ -32,7 +32,7 @@ globalThis.fetch = async (url, init) => {
 
 const systemInstruction = loadKnowledgeBase();
 const model = new GoogleGenerativeAI('test-key').getGenerativeModel({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     systemInstruction,
     tools: chatbotTools,
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
@@ -57,6 +57,9 @@ assert.match(sentInstruction, /logipoint\.sa/);
 assert.match(sentInstruction, /CMS-only/);
 assert.match(sentInstruction, /Greetings and small talk/);
 assert.match(sentInstruction, /Do not use bullets.*for these/);
+assert.match(sentInstruction, /Do not open with a marketing slogan/);
+assert.match(sentInstruction, /facitioites/);
+assert.match(sentInstruction, /a little short/);
 assert.equal(reply, 'I am the SDRS Intelligent Trade Assistant.');
 assert.deepEqual(readFunctionCalls(result.response), []);
 assert.equal(typeof result.response.functionCalls, 'function');
@@ -92,7 +95,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
 const blockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
     .startChat({ history: [] })
     .sendMessage('Tell me about Facilities');
 
@@ -106,7 +109,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
 const fullyBlockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction, tools: chatbotTools })
+    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
     .startChat({ history: [] })
     .sendMessage('How are you');
 
@@ -277,6 +280,38 @@ await assert.rejects(
 );
 assert.equal(quotaAttempts, 1, 'withSingleRetry must not retry a 429, only call the function once');
 
+assert.equal(isBusyError(new TimeoutError('slow')), true, 'a hung Gemini call should fall back to another model');
+assert.equal(isBusyError({ status: 503 }), true, 'a 503 high-demand error should fall back to another model');
+assert.equal(isBusyError({ status: 400 }), false, 'a bad request must not be retried on a different model');
+
+const triedModels = [];
+const fallbackReply = await withModelFallback(['gemini-3.8-flash', 'gemini-flash-lite-latest'], async (modelName) => {
+    triedModels.push(modelName);
+    if (modelName === 'gemini-3.8-flash') {
+        const e = new Error('high demand');
+        e.status = 503;
+        throw e;
+    }
+    return 'ok-from-lite';
+});
+assert.equal(fallbackReply, 'ok-from-lite', 'withModelFallback must use the next model after a 503');
+assert.deepEqual(triedModels, ['gemini-3.8-flash', 'gemini-flash-lite-latest'], 'withModelFallback must try primary then fallback');
+assert.deepEqual(
+    thinkingConfigForModel('gemini-3.8-flash'),
+    { thinkingConfig: { thinkingBudget: 0 } },
+    '3.8-flash turns thinking off with thinkingBudget 0'
+);
+assert.deepEqual(
+    thinkingConfigForModel('gemini-flash-lite-latest'),
+    { thinkingConfig: { thinkingLevel: 'minimal' } },
+    'flash-lite-latest rejects thinkingBudget and needs thinkingLevel minimal'
+);
+assert.deepEqual(
+    thinkingConfigForModel('gemini-3.5-flash-lite'),
+    { thinkingConfig: { thinkingLevel: 'minimal' } },
+    '3.5 flash-lite also uses thinkingLevel, not thinkingBudget'
+);
+
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');
 console.log('Malformed or non-alternating history no longer crashes /api/chat.');
@@ -285,3 +320,4 @@ console.log('Empty, oversized, and malformed /api/chat requests are rejected bef
 console.log('Conversation history is capped instead of growing forever.');
 console.log('Stuck Gemini calls time out cleanly instead of hanging until the platform kills the function.');
 console.log('Only genuinely transient errors are retried; quota, bad-request, and timeout errors are not.');
+console.log('A busy or hung Gemini model falls back to a lighter model instead of waiting out the full timeout.');

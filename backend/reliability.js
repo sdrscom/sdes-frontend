@@ -34,6 +34,44 @@ export function isRetryableError(error) {
     return status >= 500;
 }
 
+// 503 "high demand" / timeout means THIS model is packed or hung, not that
+// the API key is bad. Retrying the same model usually fails again and burns
+// the remaining Vercel time. Switch to a lighter model on a different pool.
+export function isBusyError(error) {
+    if (error instanceof TimeoutError) return true;
+    const status = error?.status || error?.response?.status;
+    return status === 503 || status === 429 || (status >= 500 && status < 600);
+}
+
+export async function withModelFallback(models, runAttempt) {
+    const unique = [...new Set((models || []).filter(Boolean))];
+    let lastError;
+    for (let i = 0; i < unique.length; i++) {
+        const modelName = unique[i];
+        try {
+            return await runAttempt(modelName);
+        } catch (error) {
+            lastError = error;
+            const hasNext = i < unique.length - 1;
+            if (!hasNext || !isBusyError(error)) throw error;
+            console.warn(`[gemini] ${modelName} busy/timeout, falling back:`, error?.message);
+        }
+    }
+    throw lastError;
+}
+
+// Flash-Lite (and the gemini-flash-lite-latest alias) returns 400
+// INVALID_ARGUMENT if we send thinkingBudget: 0. Its off-switch is
+// thinkingLevel: "minimal". gemini-3.8-flash is the reverse: budget 0 is
+// valid, thinkingLevel "minimal" is not.
+export function thinkingConfigForModel(modelName) {
+    const name = String(modelName || '').toLowerCase();
+    if (name.includes('flash-lite') || name.includes('flash_lite')) {
+        return { thinkingConfig: { thinkingLevel: 'minimal' } };
+    }
+    return { thinkingConfig: { thinkingBudget: 0 } };
+}
+
 export async function withSingleRetry(fn) {
     try {
         return await fn();

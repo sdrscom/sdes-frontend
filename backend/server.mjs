@@ -9,7 +9,7 @@ import maintenanceMiddleware from './middleware/maintenanceMiddleware.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
-import { withTimeout, withSingleRetry } from './reliability.js';
+import { withTimeout, withModelFallback, thinkingConfigForModel } from './reliability.js';
 
 dotenv.config();
 
@@ -75,10 +75,15 @@ function logTokenUsage(kind, response, startedAt) {
     console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
 }
 
-// vercel.json sets maxDuration to 30s; keep our own timeout comfortably below
-// that so our catch block gets to respond with a friendly message before the
-// platform kills the function outright with a generic error.
-const GEMINI_TIMEOUT_MS = 25000;
+// vercel.json sets maxDuration to 30s. gemini-3.8-flash is the model Google
+// requires for new keys, but it has been 503/hanging, and a 4s cutoff was too
+// short for a real "about SDRS / services" answer — both attempts timed out
+// and the widget showed "took longer than expected". Use Lite first (different
+// capacity pool, usually a few seconds), keep 3.8 as backup, and give each
+// attempt 10s so a normal commercial reply can finish.
+const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
+const GEMINI_ATTEMPT_MS = 10000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
@@ -112,21 +117,27 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             });
         }
 
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            systemInstruction: systemInstruction,
-            tools: chatbotTools,
-            // Casual and short factual replies don't need extended internal reasoning.
-            // Keeping a small thinking budget cuts latency well below Vercel's function
-            // timeout, which was likely why some replies hung for 60+ seconds and failed.
-            generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
-        });
-
-        const chat = model.startChat({ history: sanitizedHistory });
-
-        const startedAt = Date.now();
-        let result = await withSingleRetry(() => withTimeout(() => chat.sendMessage(messageParts), GEMINI_TIMEOUT_MS, 'Gemini chat request'));
-        logTokenUsage('chat', result?.response, startedAt);
+        const { result: firstResult, chat } = await withModelFallback(
+            [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL],
+            async (modelName) => {
+                const model = genAI.getGenerativeModel({
+                    model: modelName,
+                    systemInstruction: systemInstruction,
+                    tools: chatbotTools,
+                    generationConfig: thinkingConfigForModel(modelName)
+                });
+                const nextChat = model.startChat({ history: sanitizedHistory });
+                const startedAt = Date.now();
+                const nextResult = await withTimeout(
+                    () => nextChat.sendMessage(messageParts),
+                    GEMINI_ATTEMPT_MS,
+                    `Gemini chat (${modelName})`
+                );
+                logTokenUsage('chat', nextResult?.response, startedAt);
+                return { result: nextResult, chat: nextChat };
+            }
+        );
+        let result = firstResult;
         const callList = readFunctionCalls(result?.response);
         let finalMessage = readReplyText(result?.response);
 
@@ -204,21 +215,17 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const base64Data = audioBase64.split(',')[1];
         const mimeType = audioBase64.split(';')[0].split(':')[1];
 
-        const voiceModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            systemInstruction: systemInstruction,
-            generationConfig: {
-                responseMimeType: 'application/json',
-                thinkingConfig: { thinkingBudget: 0 },
-                // The prompt below already asks for "2 to 4 short sentences",
-                // but nothing previously stopped the model from occasionally
-                // generating a much longer reply anyway — and every extra
-                // token directly adds to how long the caller sits waiting
-                // before anything can be spoken back. 300 tokens comfortably
-                // covers a few conversational sentences while capping the
-                // worst case.
-                maxOutputTokens: 300
-            }
+        const voiceGenerationConfig = (modelName) => ({
+            responseMimeType: 'application/json',
+            ...thinkingConfigForModel(modelName),
+            // The prompt below already asks for "2 to 4 short sentences",
+            // but nothing previously stopped the model from occasionally
+            // generating a much longer reply anyway — and every extra
+            // token directly adds to how long the caller sits waiting
+            // before anything can be spoken back. 300 tokens comfortably
+            // covers a few conversational sentences while capping the
+            // worst case.
+            maxOutputTokens: 300
         });
 
         // The shared system instruction's "3-6 short bullets" sales-desk format is
@@ -246,11 +253,25 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         // like "what about pricing" had no idea what it was following up on. Route
         // it through a chat session with sanitized history instead, same as text chat.
         const sanitizedHistory = sanitizeHistoryForGemini(history, undefined);
-        const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
-
-        const voiceStartedAt = Date.now();
-        const result = await withTimeout(() => voiceChat.sendMessage([prompt, audioPart]), GEMINI_TIMEOUT_MS, 'Gemini voice-chat request');
-        logTokenUsage('voice-chat', result?.response, voiceStartedAt);
+        const result = await withModelFallback(
+            [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL],
+            async (modelName) => {
+                const voiceModel = genAI.getGenerativeModel({
+                    model: modelName,
+                    systemInstruction: systemInstruction,
+                    generationConfig: voiceGenerationConfig(modelName)
+                });
+                const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
+                const voiceStartedAt = Date.now();
+                const nextResult = await withTimeout(
+                    () => voiceChat.sendMessage([prompt, audioPart]),
+                    GEMINI_ATTEMPT_MS,
+                    `Gemini voice-chat (${modelName})`
+                );
+                logTokenUsage('voice-chat', nextResult?.response, voiceStartedAt);
+                return nextResult;
+            }
+        );
         const responseText = readReplyText(result?.response);
 
         if (!responseText) {

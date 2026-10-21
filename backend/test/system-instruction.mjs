@@ -5,7 +5,7 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
-import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback } from '../reliability.js';
+import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback, thinkingConfigForModel } from '../reliability.js';
 
 const calls = [];
 
@@ -293,6 +293,21 @@ const fallbackReply = await withModelFallback(['gemini-3.8-flash', 'gemini-flash
 });
 assert.equal(fallbackReply, 'ok-from-lite', 'withModelFallback must use the next model after a 503');
 assert.deepEqual(triedModels, ['gemini-3.8-flash', 'gemini-flash-lite-latest'], 'withModelFallback must try primary then fallback');
+assert.deepEqual(
+    thinkingConfigForModel('gemini-3.8-flash'),
+    { thinkingConfig: { thinkingBudget: 0 } },
+    '3.8-flash turns thinking off with thinkingBudget 0'
+);
+assert.deepEqual(
+    thinkingConfigForModel('gemini-flash-lite-latest'),
+    { thinkingConfig: { thinkingLevel: 'minimal' } },
+    'flash-lite-latest rejects thinkingBudget and needs thinkingLevel minimal'
+);
+assert.deepEqual(
+    thinkingConfigForModel('gemini-3.5-flash-lite'),
+    { thinkingConfig: { thinkingLevel: 'minimal' } },
+    '3.5 flash-lite also uses thinkingLevel, not thinkingBudget'
+);
 
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');

@@ -8,7 +8,7 @@ import { chatbotTools, executeTool } from './tools.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
-import { withTimeout, withModelFallback } from './reliability.js';
+import { withTimeout, withModelFallback, thinkingConfigForModel } from './reliability.js';
 
 dotenv.config();
 
@@ -119,7 +119,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
                     model: modelName,
                     systemInstruction: systemInstruction,
                     tools: chatbotTools,
-                    generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
+                    generationConfig: thinkingConfigForModel(modelName)
                 });
                 const nextChat = model.startChat({ history: sanitizedHistory });
                 const startedAt = Date.now();
@@ -210,9 +210,9 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const base64Data = audioBase64.split(',')[1];
         const mimeType = audioBase64.split(';')[0].split(':')[1];
 
-        const voiceGenerationConfig = {
+        const voiceGenerationConfig = (modelName) => ({
             responseMimeType: 'application/json',
-            thinkingConfig: { thinkingBudget: 0 },
+            ...thinkingConfigForModel(modelName),
             // The prompt below already asks for "2 to 4 short sentences",
             // but nothing previously stopped the model from occasionally
             // generating a much longer reply anyway — and every extra
@@ -221,7 +221,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
             // covers a few conversational sentences while capping the
             // worst case.
             maxOutputTokens: 300
-        };
+        });
 
         // The shared system instruction's "3-6 short bullets" sales-desk format is
         // written for the text chat window, not for a voice call — a bulleted list
@@ -254,7 +254,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
                 const voiceModel = genAI.getGenerativeModel({
                     model: modelName,
                     systemInstruction: systemInstruction,
-                    generationConfig: voiceGenerationConfig
+                    generationConfig: voiceGenerationConfig(modelName)
                 });
                 const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
                 const voiceStartedAt = Date.now();

@@ -60,6 +60,18 @@ export async function withModelFallback(models, runAttempt) {
     throw lastError;
 }
 
+// Flash-Lite (and the gemini-flash-lite-latest alias) returns 400
+// INVALID_ARGUMENT if we send thinkingBudget: 0. Its off-switch is
+// thinkingLevel: "minimal". gemini-3.8-flash is the reverse: budget 0 is
+// valid, thinkingLevel "minimal" is not.
+export function thinkingConfigForModel(modelName) {
+    const name = String(modelName || '').toLowerCase();
+    if (name.includes('flash-lite') || name.includes('flash_lite')) {
+        return { thinkingConfig: { thinkingLevel: 'minimal' } };
+    }
+    return { thinkingConfig: { thinkingBudget: 0 } };
+}
+
 export async function withSingleRetry(fn) {
     try {
         return await fn();

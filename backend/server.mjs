@@ -58,8 +58,9 @@ const chatRateLimiter = rateLimit({
     message: 'Too many requests. Please wait a moment before sending another message.'
 });
 
-// ✅ ADD MAINTENANCE MIDDLEWARE HERE (BEFORE ALL ROUTES)
-app.use(maintenanceMiddleware);
+// Must call the factory. `app.use(maintenanceMiddleware)` never runs next(),
+// so /api/chat hangs until the browser gives up with "could not reach".
+app.use(maintenanceMiddleware());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 let systemInstruction = loadKnowledgeBase();

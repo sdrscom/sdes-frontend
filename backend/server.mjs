@@ -9,7 +9,7 @@ import maintenanceMiddleware from './middleware/maintenanceMiddleware.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
-import { withTimeout, withModelFallback, thinkingConfigForModel } from './reliability.js';
+import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from './reliability.js';
 
 dotenv.config();
 
@@ -179,14 +179,16 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         // the real upstream status when it's a valid HTTP error code so the widget
         // can tell these cases apart, and fall back to 500 only for genuine
         // unknown/network failures.
-        const upstreamStatus = error?.status || error?.response?.status;
+        const upstreamStatus = geminiHttpStatus(error);
         const status = (upstreamStatus >= 400 && upstreamStatus < 600) ? upstreamStatus : 500;
         const message = status === 429
             ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
-            : status === 504
-                ? 'That took longer than expected to answer. Please try asking again, perhaps with a shorter question.'
-                : `Connection error with AI server. ${error?.message || ''}`.trim();
-        res.status(status).send(message);
+            : status === 503 || /high demand|service unavailable/i.test(String(error?.message || ''))
+                ? 'The assistant is busy right now. Please try again in a moment.'
+                : status === 504
+                    ? 'That took longer than expected to answer. Please try asking again, perhaps with a shorter question.'
+                    : 'Sorry, the assistant could not respond right now.';
+        res.status(status === 503 ? 503 : status).send(message);
     }
 });
 

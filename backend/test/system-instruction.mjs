@@ -5,7 +5,7 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
-import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback, thinkingConfigForModel } from '../reliability.js';
+import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
 
 const calls = [];
 
@@ -284,6 +284,16 @@ assert.equal(quotaAttempts, 1, 'withSingleRetry must not retry a 429, only call 
 assert.equal(isBusyError(new TimeoutError('slow')), true, 'a hung Gemini call should fall back to another model');
 assert.equal(isBusyError({ status: 503 }), true, 'a 503 high-demand error should fall back to another model');
 assert.equal(isBusyError({ status: 400 }), false, 'a bad request must not be retried on a different model');
+assert.equal(
+    geminiHttpStatus({ message: '[GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent: [503 Service Unavailable] This model is currently experiencing high demand.' }),
+    503,
+    'SDK errors often put 503 in the message instead of error.status'
+);
+assert.equal(
+    isBusyError({ message: '[GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent: [503 Service Unavailable] This model is currently experiencing high demand.' }),
+    true,
+    'a 503 inside the SDK message must fall back to Lite instead of dumping the URL in chat'
+);
 
 const triedModels = [];
 const fallbackReply = await withModelFallback(['gemini-3.8-flash', 'gemini-flash-lite-latest'], async (modelName) => {

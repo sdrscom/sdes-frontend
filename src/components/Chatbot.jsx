@@ -414,7 +414,8 @@ const css = `
 .message-row .message { flex: 1 1 auto; min-width: 0; }
 .message { padding: 12px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
 .user .message { background: #2d3b76; color: white; border-bottom-right-radius: 4px; }
-.bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); }
+.bot .message { background: #fff; color: #1a2347; border-bottom-left-radius: 4px; border: 1px solid rgba(45, 59, 118, 0.1); overflow-wrap: anywhere; word-break: break-word; }
+.message a { overflow-wrap: anywhere; word-break: break-all; }
 .message p { margin: 0 0 8px 0; } .message p:last-child { margin: 0; }
 .message ul, .message ol { margin: 6px 0 0; padding-left: 18px; }
 .message a { color: #b82227; }
@@ -1647,9 +1648,10 @@ export default function Chatbot() {
                 // 400/413/429/504 responses now carry a specific, already
                 // user-friendly reason (bad input, rate-limited, Gemini's own quota
                 // exhausted, or a request that timed out) — show that directly
-                // instead of a generic message. Only a genuine, unexplained server
-                // error (500) falls back to the generic apology.
-                const message = response.status !== 500 && botReply
+                // instead of a generic message. Never surface Google SDK URLs or
+                // stack text; those used to overflow the bubble on phones.
+                const looksLikeSdkDump = /GoogleGenerativeAI|generativelanguage\.googleapis|generateContent/i.test(botReply || '');
+                const message = !looksLikeSdkDump && response.status !== 500 && botReply
                     ? botReply
                     : t.noResponse;
                 appendMessage(message, 'bot');

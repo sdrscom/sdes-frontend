@@ -27,9 +27,16 @@ export function withTimeout(promiseFactory, ms, label) {
 // timeout is also not retried — doing so would just double the worst-case wait
 // for a user who is already waiting too long. Only genuinely transient errors
 // (a dropped connection, or a 5xx from Google's side) are worth retrying.
+export function geminiHttpStatus(error) {
+    const status = error?.status || error?.response?.status || error?.statusCode;
+    if (typeof status === 'number' && status >= 400) return status;
+    const match = String(error?.message || '').match(/\[(\d{3})\s/);
+    return match ? Number(match[1]) : undefined;
+}
+
 export function isRetryableError(error) {
     if (error instanceof TimeoutError) return false;
-    const status = error?.status || error?.response?.status;
+    const status = geminiHttpStatus(error);
     if (status === undefined) return true; // network-level failure, no HTTP status at all
     return status >= 500;
 }
@@ -39,7 +46,9 @@ export function isRetryableError(error) {
 // the remaining Vercel time. Switch to a lighter model on a different pool.
 export function isBusyError(error) {
     if (error instanceof TimeoutError) return true;
-    const status = error?.status || error?.response?.status;
+    const status = geminiHttpStatus(error);
+    const message = String(error?.message || '');
+    if (/high demand|service unavailable/i.test(message)) return true;
     return status === 503 || status === 429 || (status >= 500 && status < 600);
 }
 

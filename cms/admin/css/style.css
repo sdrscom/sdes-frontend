@@ -47,15 +47,28 @@ svg.icon { width: 18px; height: 18px; flex-shrink: 0; }
 /* Keep the background painted while the next page loads (no white flash). */
 html { background: var(--bg); }
 
-/* Until api.js draws the sidebar, keep the bare page content out of sight. */
+/* Until api.js draws the sidebar, keep the bare page content out of sight and
+   paint the sidebar's navy backdrop so no frame ever shows a white strip. */
 body:has(> #app-nav) > .container { visibility: hidden; }
+@media (min-width: 961px) {
+  body:has(> #app-nav) {
+    background: linear-gradient(to right, var(--navy-800) var(--sidebar-w), var(--bg) var(--sidebar-w));
+  }
+}
 
-/* Smooth cross-fade between CMS pages; the sidebar and top bar stay still. */
+/* Smooth cross-fade of the main area between CMS pages. The sidebar and top
+   bar are swapped instantly (no fade), so they look completely still. */
 @view-transition { navigation: auto; }
 .sidebar { view-transition-name: cms-sidebar; }
 .topbar { view-transition-name: cms-topbar; }
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: 180ms; animation-timing-function: ease-out; }
+::view-transition-old(cms-sidebar),
+::view-transition-old(cms-topbar) { display: none; }
+::view-transition-new(cms-sidebar),
+::view-transition-new(cms-topbar) { animation: none; }
+::view-transition-group(cms-sidebar),
+::view-transition-group(cms-topbar) { animation: none; }
 
 /* Browsers without page transitions: fade the new content in instead. */
 @keyframes cms-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

@@ -6,6 +6,8 @@
 <title>SDES CMS | Edit page</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
 <link rel="stylesheet" href="/css/style.css" />
+<!-- Don't paint until api.js has drawn the sidebar (avoids a flash between pages). -->
+<link rel="expect" href="#shell-content" blocking="render" />
 </head>
 <body>
   <div id="app-nav"></div>

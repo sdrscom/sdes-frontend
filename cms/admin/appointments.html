@@ -6,6 +6,8 @@
 <title>SDES CMS | Appointments</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
 <link rel="stylesheet" href="/css/style.css" />
+<!-- Don't paint until api.js has drawn the sidebar (avoids a flash between pages). -->
+<link rel="expect" href="#shell-content" blocking="render" />
 <style>
   .pill-danger { background: var(--danger-bg); border-color: #f6c9ca; color: var(--danger); }
   .pill-info { background: #eef1fa; border-color: #d5dcef; color: var(--navy-700); }

@@ -76,12 +76,12 @@ function logTokenUsage(kind, response, startedAt) {
     console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
 }
 
-// New Gemini keys cannot call gemini-2.5-flash (404). 3.8-flash is the closest
-// working model to the pre-key voice. Lite is only the busy-pool fallback.
-// Give each attempt 10s so a normal commercial reply can finish.
-const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest';
-const GEMINI_ATTEMPT_MS = 10000;
+// New Gemini keys cannot call gemini-2.5-flash (404). Lite answers in a few
+// seconds; 3.8-flash often sits busy for the full attempt window and made
+// both text and live voice feel stuck. Use Lite first, 3.8 as backup, 6s each.
+const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
+const GEMINI_ATTEMPT_MS = 6000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
@@ -122,7 +122,10 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
                     model: modelName,
                     systemInstruction: systemInstruction,
                     tools: chatbotTools,
-                    generationConfig: thinkingConfigForModel(modelName)
+                    generationConfig: {
+                        ...thinkingConfigForModel(modelName),
+                        maxOutputTokens: 400
+                    }
                 });
                 const nextChat = model.startChat({ history: sanitizedHistory });
                 const startedAt = Date.now();

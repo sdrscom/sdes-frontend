@@ -1132,16 +1132,13 @@ export default function Chatbot() {
         // in the same tick can silently be dropped. A short delay, plus waiting for
         // the voice list, avoids racing that.
         await new Promise(r => setTimeout(r, 50));
-        const availableVoices = await waitForVoices();
-
+        let availableVoices = [];
+        try { availableVoices = window.speechSynthesis.getVoices(); } catch (e) {}
         if (availableVoices.length === 0) {
-            // Genuinely no TTS voice installed on this device/browser — speaking is
-            // not possible here regardless of what our code does. Say so once in the
-            // transcript instead of the overlay silently doing nothing forever.
-            appendMessage(t.noTtsVoice, 'bot');
-            if (isVoiceActiveRef.current) startListeningLoop();
-            return;
+            availableVoices = await waitForVoices(300);
         }
+
+        if (!isVoiceActiveRef.current) return;
 
         const lang = detectVoiceLanguage(text);
         // Markdown (bullets, bold, links) reads aloud as disjointed fragments, not
@@ -1163,8 +1160,6 @@ export default function Chatbot() {
         const hasMatchingVoice = availableVoices.some(v => v.lang === lang || v.lang?.toLowerCase()?.startsWith(langPrefix));
         if (!hasMatchingVoice && langPrefix !== 'en') {
             console.warn(`[voice] no installed TTS voice found for "${lang}" — spoken audio may not sound right. Available voice langs:`, availableVoices.map(v => v.lang));
-            const languageName = lang === 'ar-SA' ? t.languageNameArabic : lang === 'ur-PK' ? t.languageNameUrdu : lang;
-            appendMessage(t.noMatchingVoice(languageName), 'bot');
         }
 
         for (let i = 0; i < audioQueueRef.current.length; i++) {

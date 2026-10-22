@@ -43,6 +43,31 @@ body {
 a { color: inherit; }
 svg.icon { width: 18px; height: 18px; flex-shrink: 0; }
 
+/* ---------- Page transitions ---------- */
+/* Keep the background painted while the next page loads (no white flash). */
+html { background: var(--bg); }
+
+/* Until api.js draws the sidebar, keep the bare page content out of sight. */
+body:has(> #app-nav) > .container { visibility: hidden; }
+
+/* Smooth cross-fade between CMS pages; the sidebar and top bar stay still. */
+@view-transition { navigation: auto; }
+.sidebar { view-transition-name: cms-sidebar; }
+.topbar { view-transition-name: cms-topbar; }
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 180ms; animation-timing-function: ease-out; }
+
+/* Browsers without page transitions: fade the new content in instead. */
+@keyframes cms-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@supports not (view-transition-name: none) {
+  #shell-content { animation: cms-fade-in 180ms ease-out; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  #shell-content { animation: none; }
+}
+
 /* ---------- App shell ---------- */
 .shell { display: flex; min-height: 100vh; }
 

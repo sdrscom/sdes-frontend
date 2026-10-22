@@ -51,7 +51,9 @@
       });
 
       if (res.ok) {
-        window.location.href = homeFor((await res.json()).user);
+        const { user } = await res.json();
+        writeCachedUser(user);
+        window.location.href = homeFor(user);
       } else {
         const data = await res.json().catch(() => ({}));
         errorEl.textContent = data.error || 'Login failed';

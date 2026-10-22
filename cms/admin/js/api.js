@@ -1,11 +1,29 @@
 let currentUser = null;
 
+// The signed-in user is remembered for this browser tab so the next page can
+// draw the sidebar immediately instead of waiting for /admin/api/me.
+const USER_CACHE_KEY = 'sdes_cms_user';
+function readCachedUser() {
+  try {
+    return JSON.parse(sessionStorage.getItem(USER_CACHE_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+function writeCachedUser(user) {
+  try {
+    if (user) sessionStorage.setItem(USER_CACHE_KEY, JSON.stringify({ id: user.id, username: user.username, role: user.role }));
+    else sessionStorage.removeItem(USER_CACHE_KEY);
+  } catch {}
+}
+
 async function apiFetch(path, options = {}) {
   const res = await fetch(path, {
     credentials: 'include',
     ...options,
   });
   if (res.status === 401 && !path.includes('/admin/api/login')) {
+    writeCachedUser(null);
     window.location.href = '/index.html';
     throw new Error('Not authenticated');
   }
@@ -38,6 +56,7 @@ async function requireSession(roles = ['admin']) {
   }
   const { user } = await res.json();
   currentUser = user;
+  writeCachedUser(user);
   if (!roles.includes(user.role)) {
     window.location.href = homeFor(user);
     return null;
@@ -85,6 +104,7 @@ function formatBytes(n) {
 }
 
 async function logout() {
+  writeCachedUser(null);
   await apiFetch('/admin/api/logout', { method: 'POST' });
   window.location.href = '/index.html';
 }
@@ -178,6 +198,13 @@ function rememberFrontendOrigin(origin) {
 }
 
 function renderNav(active) {
+  const userKey = `${currentUser?.username}|${currentUser?.role}`;
+  const drawn = document.querySelector('.shell');
+  if (drawn) {
+    // Already drawn from the cached user; only redraw if the account changed.
+    if (drawn.dataset.user !== userKey) window.location.reload();
+    return;
+  }
   const mount = document.getElementById('app-nav');
   if (!mount) return;
   const path = active || window.location.pathname;
@@ -186,6 +213,7 @@ function renderNav(active) {
 
   const shell = document.createElement('div');
   shell.className = 'shell';
+  shell.dataset.user = userKey;
   shell.innerHTML = `
     <aside class="sidebar" aria-label="Main navigation">
       <a class="brand" href="${homeFor(currentUser) === '/index.html' ? '/dashboard.html' : homeFor(currentUser)}">
@@ -476,3 +504,14 @@ function pickFile({ accept = 'image' } = {}) {
       });
   });
 }
+
+// Draw the sidebar and top bar straight away from the remembered user, so
+// moving between pages doesn't flash a blank or unstyled screen. The page's
+// own requireSession() still verifies the session with the server.
+(function drawShellFromCache() {
+  if (!document.getElementById('app-nav')) return;
+  const cached = readCachedUser();
+  if (!cached) return;
+  currentUser = cached;
+  renderNav();
+})();

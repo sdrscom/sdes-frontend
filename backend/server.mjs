@@ -81,7 +81,7 @@ function logTokenUsage(kind, response, startedAt) {
 // both text and live voice feel stuck. Use Lite first, 3.8 as backup, 6s each.
 const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
-const GEMINI_ATTEMPT_MS = 6000;
+const GEMINI_ATTEMPT_MS = 8000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {

@@ -5,7 +5,8 @@ import { chatbotTools, executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
 import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
-import { TimeoutError, withTimeout, isRetryableError, isBusyError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
+import { TimeoutError, withTimeout, isRetryableError, isBusyError, isVoiceFallbackError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
+import { parseVoiceModelOutput } from '../voiceReply.js';
 
 const calls = [];
 
@@ -57,6 +58,7 @@ assert.match(sentInstruction, /logipoint\.sa/);
 assert.match(sentInstruction, /CMS-only/);
 assert.match(sentInstruction, /Greetings and small talk/);
 assert.match(sentInstruction, /How you sound/);
+assert.match(sentInstruction, /Never use an em dash/);
 assert.match(sentInstruction, /Answer the question they asked/);
 assert.match(sentInstruction, /Book an Appointment/);
 assert.match(sentInstruction, /Operation Portal/);
@@ -326,6 +328,39 @@ assert.deepEqual(
     { thinkingConfig: { thinkingLevel: 'minimal' } },
     '3.5 flash-lite also uses thinkingLevel, not thinkingBudget'
 );
+assert.equal(isVoiceFallbackError({ status: 400 }), true, 'voice should try the next model after a 400 from JSON+audio');
+assert.equal(isVoiceFallbackError({ status: 404 }), true, 'voice should try the next model after a missing model id');
+assert.deepEqual(
+    parseVoiceModelOutput('```json\n{"transcript":"hi","reply":"Hello, I am Fares."}\n```'),
+    { transcript: 'hi', reply: 'Hello, I am Fares.' },
+    'voice JSON inside a fence must still be spoken'
+);
+assert.equal(
+    parseVoiceModelOutput('{"transcript":"book a visit","reply":"Use the Book an Appointment button on the home page."').reply,
+    'Use the Book an Appointment button on the home page.',
+    'a truncated voice JSON must still yield the reply'
+);
+assert.deepEqual(
+    parseVoiceModelOutput('Yes, that button opens the site visit form.'),
+    { transcript: '', reply: 'Yes, that button opens the site visit form.' },
+    'plain spoken prose should still be used as the voice reply'
+);
+const voiceTried = [];
+const voiceFallbackReply = await withModelFallback(
+    ['gemini-flash-lite-latest', 'gemini-3.8-flash'],
+    async (modelName) => {
+        voiceTried.push(modelName);
+        if (modelName === 'gemini-flash-lite-latest') {
+            const e = new Error('unsupported audio json mode');
+            e.status = 400;
+            throw e;
+        }
+        return 'ok-from-voice-fallback';
+    },
+    isVoiceFallbackError
+);
+assert.equal(voiceFallbackReply, 'ok-from-voice-fallback', 'voice 400 must fall through to the next model');
+assert.deepEqual(voiceTried, ['gemini-flash-lite-latest', 'gemini-3.8-flash']);
 
 console.log('Gemini request includes the SDRS system instruction and knowledge base.');
 console.log('Blocked finish reasons no longer crash /api/chat.');

@@ -9,7 +9,8 @@ import maintenanceMiddleware from './middleware/maintenanceMiddleware.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
-import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from './reliability.js';
+import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus, isVoiceFallbackError } from './reliability.js';
+import { parseVoiceModelOutput } from './voiceReply.js';
 
 dotenv.config();
 
@@ -82,7 +83,9 @@ function logTokenUsage(kind, response, startedAt) {
 const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
 const GEMINI_ATTEMPT_MS = 8000;
-const GEMINI_VOICE_ATTEMPT_MS = 5000;
+// Audio + a reply needs more than a short text turn. 5s cut the call off
+// mid-listen and the widget spoke "trouble processing that audio".
+const GEMINI_VOICE_ATTEMPT_MS = 10000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
@@ -220,16 +223,12 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const mimeType = audioBase64.split(';')[0].split(':')[1];
 
         const voiceGenerationConfig = (modelName) => ({
-            responseMimeType: 'application/json',
             ...thinkingConfigForModel(modelName),
-            // The prompt below already asks for "2 to 4 short sentences",
-            // but nothing previously stopped the model from occasionally
-            // generating a much longer reply anyway — and every extra
-            // token directly adds to how long the caller sits waiting
-            // before anything can be spoken back. 300 tokens comfortably
-            // covers a few conversational sentences while capping the
-            // worst case.
-            maxOutputTokens: 160
+            // JSON mime + audio 400s on some Gemini ids. The prompt still
+            // asks for JSON; parseVoiceModelOutput accepts fences or prose.
+            // 160 tokens was too tight: a longer transcript truncated the
+            // JSON and the caller only heard the processing-error line.
+            maxOutputTokens: 280
         });
 
         // The shared system instruction's "3-6 short bullets" sales-desk format is
@@ -243,7 +242,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const uiLanguageHint = uiLanguage === 'ar'
             ? ' This widget\'s interface is currently set to Arabic — if the speaker\'s language is genuinely ambiguous or unclear from the audio, default to replying in Arabic.'
             : '';
-        const prompt = `Listen to the audio. Transcribe exactly what they said, then answer as Fares — a real person at the Dammam bonded zone, not a script. Same language they spoke.${uiLanguageHint} Use everyday words and contractions. If the website can do what they asked, say which button or page to use. Speak one or two short sentences, no bullets or markdown. Output ONLY valid JSON: {"transcript": "what they said", "reply": "your answer"}`;
+        const prompt = `Listen to the audio. Transcribe exactly what they said, then answer as Fares, a real person at the Dammam bonded zone, not a script. Same language they spoke.${uiLanguageHint} Use everyday words and contractions. No dash as a pause. If the website can do what they asked, say which button or page to use. Speak one or two short sentences, no bullets or markdown. Output ONLY valid JSON: {"transcript": "what they said", "reply": "your answer"}`;
 
         const audioPart = {
             inlineData: {
@@ -274,24 +273,24 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
                 );
                 logTokenUsage('voice-chat', nextResult?.response, voiceStartedAt);
                 return nextResult;
-            }
+            },
+            isVoiceFallbackError
         );
         const responseText = readReplyText(result?.response);
+        const parsed = parseVoiceModelOutput(responseText);
 
-        if (!responseText) {
+        if (!parsed?.reply) {
             throw new Error('Gemini returned no usable text for the audio turn.');
         }
 
-        // Gemini can occasionally wrap JSON in a ```json fence even with
-        // responseMimeType set, especially for longer replies. Strip that before parsing
-        // instead of letting a strict JSON.parse throw on an otherwise-valid response.
-        const cleaned = responseText.trim().replace(/^```json\s*|```$/g, '').trim();
-        res.json(JSON.parse(cleaned));
+        res.json(parsed);
     } catch (error) {
         console.error('\n❌ Voice Processing Error:', error);
-        res.status(500).json({
-            reply: 'Sorry, I had trouble processing that audio. Could you try again?',
-            transcript: '(Audio processing failed)'
+        const upstreamStatus = geminiHttpStatus(error);
+        const status = (upstreamStatus >= 400 && upstreamStatus < 600) ? upstreamStatus : 500;
+        res.status(status === 400 ? 500 : status).json({
+            reply: 'Sorry, say that one more time.',
+            transcript: ''
         });
     }
 });

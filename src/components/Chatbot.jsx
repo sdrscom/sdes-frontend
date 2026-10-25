@@ -26,6 +26,16 @@ const SANITIZE_ALLOWED_TAGS = [
     'tbody', 'tr', 'th', 'td', 'span', 'del', 's'
 ];
 
+// Fares must not use a dash as a pause ("Hi — I'm", "Yes - that").
+// Keep hyphens inside words (site-visit). Applied to every bot bubble.
+function stripPauseDashes(text) {
+    return String(text ?? '')
+        .replace(/\s*[\u2014\u2013]\s*/g, ', ')
+        .replace(/\s+-\s+/g, ', ')
+        .replace(/,\s*,+/g, ',')
+        .replace(/^,\s*/, '');
+}
+
 function sanitizeBotHtml(html) {
     const clean = DOMPurify.sanitize(html, {
         ALLOWED_TAGS: SANITIZE_ALLOWED_TAGS,
@@ -56,7 +66,7 @@ function sanitizeBotHtml(html) {
 // language the visitor has the site set to.
 const CHATBOT_TEXT = {
     en: {
-        greeting: "Hi — I'm Fares. What can I help you with?",
+        greeting: "Hi, I'm Fares. What can I help you with?",
         headerTitle: 'Fares',
         toggleLabel: 'Chat with Fares',
         toggleTitle: 'Chat with Fares',
@@ -69,7 +79,7 @@ const CHATBOT_TEXT = {
         placeholderThinking: 'Assistant is thinking…',
         placeholderListening: 'Listening for speech…',
         placeholderAttachment: 'Add a note and send',
-        placeholderDefault: 'Type a message...',
+        placeholderDefault: 'Message',
         voiceTitle: 'Start Voice Mode',
         micTitle: 'Voice to Text',
         statusSpeaking: 'Speaking…',
@@ -115,7 +125,7 @@ const CHATBOT_TEXT = {
         placeholderThinking: 'المساعد يفكر…',
         placeholderListening: 'يستمع للصوت…',
         placeholderAttachment: 'أضف ملاحظة وأرسل',
-        placeholderDefault: 'اكتب رسالة...',
+        placeholderDefault: 'رسالة',
         voiceTitle: 'بدء وضع الصوت',
         micTitle: 'تحويل الصوت إلى نص',
         statusSpeaking: 'يتحدث…',
@@ -444,7 +454,7 @@ const css = `
     display: flex; align-items: flex-end; gap: 4px; padding: 10px 12px 12px;
     background: #fff; border-top: 1px solid rgba(45, 59, 118, 0.1); flex: 0 0 auto;
 }
-.composer { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.composer { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; min-width: 0; }
 .icon-btn {
     background: none; border: none; cursor: pointer; color: #5c6784; padding: 0;
     display: flex; align-items: center; justify-content: center; transition: color 0.2s, background 0.2s;
@@ -452,9 +462,10 @@ const css = `
 }
 .icon-btn:hover { color: #2d3b76; background: rgba(45, 59, 118, 0.08); }
 #message-input {
-    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 12px 14px;
-    font-size: 14px; line-height: 20px; border-radius: 14px; background: #f7f8fc; color: #1a2347;
-    resize: none; overflow-y: auto; min-height: 44px; height: 44px; max-height: 120px; font-family: inherit;
+    box-sizing: border-box; field-sizing: fixed; flex: 0 0 auto;
+    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 12px 12px;
+    font-size: 14px; line-height: 20px; border-radius: 22px; background: #f7f8fc; color: #1a2347;
+    resize: none; overflow: hidden; min-height: 44px; height: 44px; max-height: 44px; font-family: inherit;
     /* Hide the native inner scrollbar (the grey "pipe" on the right of
        the composer). The box itself still grows up to max-height, and
        once it hits that cap the user can still scroll with the wheel
@@ -464,6 +475,11 @@ const css = `
        to feel instant, not animated (see autoResizeMessageInput()'s comment).
        A transition is applied inline, only for the brief moment the
        composer settles back down after sending/clearing. */
+}
+#message-input.has-draft { max-height: 120px; border-radius: 14px; overflow-y: auto; }
+#message-input::placeholder {
+    color: #8b93a7; line-height: 20px; opacity: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #message-input::-webkit-scrollbar { display: none; }
 #message-input:focus { border-color: #2d3b76; background: #fff; box-shadow: 0 0 0 3px rgba(45, 59, 118, 0.12); }
@@ -843,17 +859,22 @@ export default function Chatbot() {
     function autoResizeMessageInput(animate = false) {
         const el = messageInputRef.current;
         if (!el) return;
+        const hasText = Boolean(el.value);
+        el.classList.toggle('has-draft', hasText);
         el.style.transition = animate ? 'height 0.16s ease' : 'none';
+        el.style.maxHeight = hasText ? '120px' : `${COMPOSER_MIN_HEIGHT}px`;
         el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
-        // Empty or single-line drafts stay at 44px. Growing on focus, on
-        // mobile keyboard resize, or from scrollHeight of an empty field
-        // is what made the composer jump without a reason.
-        if (!el.value) {
+        el.style.overflowY = 'hidden';
+        // Empty field stays a single centered line. Growing on focus, on
+        // mobile keyboard resize, or from a wrapped placeholder is what
+        // made the composer jump or clip "Type a message".
+        if (!hasText) {
             if (animate) setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
             return;
         }
         const next = Math.max(COMPOSER_MIN_HEIGHT, Math.min(el.scrollHeight, 120));
         el.style.height = `${next}px`;
+        if (next >= 120) el.style.overflowY = 'auto';
         if (animate) {
             setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
         }
@@ -948,7 +969,8 @@ export default function Chatbot() {
     }
 
     function appendMessage(text, role) {
-        setMessages(prev => [...prev, { role, text, time: Date.now() }]);
+        const nextText = role === 'bot' ? stripPauseDashes(text) : text;
+        setMessages(prev => [...prev, { role, text: nextText, time: Date.now() }]);
     }
 
     // How most chat apps label message times: a brand-new message reads
@@ -1280,15 +1302,27 @@ export default function Chatbot() {
         }
     }
 
+    function pickVoiceRecorderMime() {
+        if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+            return '';
+        }
+        return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((type) => MediaRecorder.isTypeSupported(type)) || '';
+    }
+
     function startListeningLoop() {
         setVisualizerState('listening');
         playListenCue();
         audioChunksRef.current = [];
 
         try {
-            const mr = new MediaRecorder(micStreamRef.current, { mimeType: 'audio/webm' });
+            const recorderMime = pickVoiceRecorderMime();
+            const mr = recorderMime
+                ? new MediaRecorder(micStreamRef.current, { mimeType: recorderMime })
+                : new MediaRecorder(micStreamRef.current);
             mediaRecorderRef.current = mr;
-            mr.ondataavailable = e => audioChunksRef.current.push(e.data);
+            mr.ondataavailable = e => {
+                if (e.data && e.data.size) audioChunksRef.current.push(e.data);
+            };
             mr.onstop = async () => {
                 if (!isVoiceActiveRef.current) return;
                 setVisualizerState('processing');
@@ -1298,7 +1332,8 @@ export default function Chatbot() {
                 // to the user. A short tone the instant recording stops gives
                 // an immediate "heard you, working on it" cue to fill it.
                 playThinkingBlip();
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const blobType = recorderMime.split(';')[0] || 'audio/webm';
+                const audioBlob = new Blob(audioChunksRef.current, { type: blobType });
                 // allow smaller blobs to be processed to avoid endless listening loops
                 try { clearTimeout(recorderTimerRef.current); recorderTimerRef.current = null; } catch (e) {}
                 if (audioBlob.size < 200) {
@@ -1311,7 +1346,7 @@ export default function Chatbot() {
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = () => sendAudioToGemini(reader.result);
             };
-            mr.start();
+            mr.start(250);
             // ensure recording doesn't run forever — stop after 7s to force processing
             try {
                 recorderTimerRef.current = setTimeout(() => {
@@ -1361,14 +1396,16 @@ export default function Chatbot() {
             // both in voiceHistoryRef (not shown anywhere) so follow-up
             // questions in the same voice session keep their context.
             if (data.reply) {
-                if (data.transcript && data.transcript !== '...') {
+                const spoken = stripPauseDashes(data.reply);
+                const isRetryPrompt = /say that one more time|trouble processing|could not reach/i.test(spoken);
+                if (response.ok && data.transcript && data.transcript !== '...' && !isRetryPrompt) {
                     voiceHistoryRef.current = [
                         ...voiceHistoryRef.current,
                         { role: 'user', parts: [{ text: data.transcript }] },
-                        { role: 'model', parts: [{ text: data.reply }] }
+                        { role: 'model', parts: [{ text: spoken }] }
                     ];
                 }
-                playHumanVoice(data.reply);
+                playHumanVoice(spoken);
             } else {
                 startListeningLoop();
             }
@@ -1699,12 +1736,13 @@ export default function Chatbot() {
             }
 
             if (botReply) {
-                appendMessage(botReply, 'bot');
+                const cleanedReply = stripPauseDashes(botReply);
+                appendMessage(cleanedReply, 'bot');
                 playReplyChime();
                 conversationHistoryRef.current = [
                     ...history,
                     { role: 'user', parts: [{ text: finalMessage }] },
-                    { role: 'model', parts: [{ text: botReply }] }
+                    { role: 'model', parts: [{ text: cleanedReply }] }
                 ];
             } else {
                 appendMessage(t.noReplyGenerated, 'bot');
@@ -1771,7 +1809,7 @@ export default function Chatbot() {
                                 {m.role === 'bot' ? (
                                     <div className="message-row">
                                         <div className="msg-avatar"><RoboticIcon size={22} idSuffix={`msg${idx}`} /></div>
-                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: sanitizeBotHtml(marked.parse(m.text)) }} />
+                                        <div className="message" dir="auto" dangerouslySetInnerHTML={{ __html: sanitizeBotHtml(marked.parse(m.role === 'bot' ? stripPauseDashes(m.text) : m.text)) }} />
                                     </div>
                                 ) : (
                                     <div className="message" dir="auto">{m.text}</div>
@@ -1833,7 +1871,7 @@ export default function Chatbot() {
                                     <button type="button" onClick={() => setSelectedAttachment(null)} aria-label={t.removeAttachment}>×</button>
                                 </div>
                             )}
-                            <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
+                            <textarea id="message-input" className={input ? 'has-draft' : ''} ref={messageInputRef} value={input} onChange={e => {
                                 setInput(e.target.value);
                                 try { autoResizeMessageInput(); } catch (err) {}
                             }} onKeyDown={e => {

@@ -52,7 +52,7 @@ export function isBusyError(error) {
     return status === 503 || status === 429 || (status >= 500 && status < 600);
 }
 
-export async function withModelFallback(models, runAttempt) {
+export async function withModelFallback(models, runAttempt, shouldFallback = isBusyError) {
     const unique = [...new Set((models || []).filter(Boolean))];
     let lastError;
     for (let i = 0; i < unique.length; i++) {
@@ -62,11 +62,19 @@ export async function withModelFallback(models, runAttempt) {
         } catch (error) {
             lastError = error;
             const hasNext = i < unique.length - 1;
-            if (!hasNext || !isBusyError(error)) throw error;
+            if (!hasNext || !shouldFallback(error)) throw error;
             console.warn(`[gemini] ${modelName} busy/timeout, falling back:`, error?.message);
         }
     }
     throw lastError;
+}
+
+// Voice + JSON-mode + audio sometimes 400s on one Gemini id and works on the
+// next. Text chat still treats 400 as fatal (wrong thinkingConfig, bad input).
+export function isVoiceFallbackError(error) {
+    if (isBusyError(error)) return true;
+    const status = geminiHttpStatus(error);
+    return status === 400 || status === 404;
 }
 
 // Flash-Lite (and the gemini-flash-lite-latest alias) returns 400

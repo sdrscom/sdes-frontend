@@ -82,6 +82,7 @@ function logTokenUsage(kind, response, startedAt) {
 const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
 const GEMINI_ATTEMPT_MS = 8000;
+const GEMINI_VOICE_ATTEMPT_MS = 5000;
 
 app.post('/api/chat', chatRateLimiter, async (req, res) => {
     try {
@@ -228,7 +229,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
             // before anything can be spoken back. 300 tokens comfortably
             // covers a few conversational sentences while capping the
             // worst case.
-            maxOutputTokens: 300
+            maxOutputTokens: 160
         });
 
         // The shared system instruction's "3-6 short bullets" sales-desk format is
@@ -242,7 +243,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const uiLanguageHint = uiLanguage === 'ar'
             ? ' This widget\'s interface is currently set to Arabic — if the speaker\'s language is genuinely ambiguous or unclear from the audio, default to replying in Arabic.'
             : '';
-        const prompt = `Listen to the audio. First, transcribe exactly what the user said in their original language. Then, provide a helpful answer as Fares, the SDRS AI Assistant. CRITICAL: You MUST write your 'reply' in the EXACT SAME LANGUAGE that the user spoke in the audio (e.g., if they speak Urdu, write your reply in Urdu script. If they speak Arabic, reply in Arabic).${uiLanguageHint} This reply will be read aloud by text-to-speech, not displayed as text, so write it the way a knowledgeable person would actually speak on a phone call: short, flowing, natural sentences connected with normal spoken words like "and", "also", or "on top of that". Do NOT use bullet points, numbered lists, markdown formatting (no asterisks, dashes, or headers), or any symbols that would sound strange read aloud. Keep it warm and concise — 2 to 4 short sentences is usually enough. Output ONLY valid JSON. Format: {"transcript": "what they said", "reply": "your answer"}`;
+        const prompt = `Listen to the audio. Transcribe exactly what they said, then answer as Fares — a real person at the Dammam bonded zone, not a script. Same language they spoke.${uiLanguageHint} Use everyday words and contractions. If the website can do what they asked, say which button or page to use. Speak one or two short sentences, no bullets or markdown. Output ONLY valid JSON: {"transcript": "what they said", "reply": "your answer"}`;
 
         const audioPart = {
             inlineData: {
@@ -268,7 +269,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
                 const voiceStartedAt = Date.now();
                 const nextResult = await withTimeout(
                     () => voiceChat.sendMessage([prompt, audioPart]),
-                    GEMINI_ATTEMPT_MS,
+                    GEMINI_VOICE_ATTEMPT_MS,
                     `Gemini voice-chat (${modelName})`
                 );
                 logTokenUsage('voice-chat', nextResult?.response, voiceStartedAt);

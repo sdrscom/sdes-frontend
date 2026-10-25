@@ -56,7 +56,7 @@ function sanitizeBotHtml(html) {
 // language the visitor has the site set to.
 const CHATBOT_TEXT = {
     en: {
-        greeting: "Hello! I'm Fares, your SDRS Trade Assistant. How can I help you today?",
+        greeting: "Hi — I'm Fares. What can I help you with?",
         headerTitle: 'Fares',
         toggleLabel: 'Chat with Fares',
         toggleTitle: 'Chat with Fares',
@@ -72,10 +72,14 @@ const CHATBOT_TEXT = {
         placeholderDefault: 'Type a message...',
         voiceTitle: 'Start Voice Mode',
         micTitle: 'Voice to Text',
-        statusSpeaking: 'Speaking...',
-        statusListening: 'Listening...',
-        statusProcessing: 'Processing...',
-        statusConnecting: 'Connecting...',
+        statusSpeaking: 'Speaking…',
+        statusListening: 'Listening…',
+        statusProcessing: 'Getting your answer…',
+        statusConnecting: 'Starting…',
+        statusHintSpeaking: 'Tap the circle to interrupt',
+        statusHintListening: 'Speak now',
+        statusHintProcessing: 'Fares heard you',
+        statusHintConnecting: 'One moment',
         interruptHint: 'Tap to interrupt',
         bubbleTitle: "Hi, I'm Fares 👋",
         bubbleBody: 'Need help with trade, customs, or logistics? Ask me anything.',
@@ -98,7 +102,7 @@ const CHATBOT_TEXT = {
         reachFailed: 'Sorry, I could not reach the assistant right now.'
     },
     ar: {
-        greeting: 'مرحباً! أنا فارس، مساعد التجارة في SDRS. كيف يمكنني مساعدتك اليوم؟',
+        greeting: 'مرحباً، أنا فارس. كيف أقدر أساعدك؟',
         headerTitle: 'فارس',
         toggleLabel: 'تحدث مع فارس',
         toggleTitle: 'تحدث مع فارس',
@@ -114,10 +118,14 @@ const CHATBOT_TEXT = {
         placeholderDefault: 'اكتب رسالة...',
         voiceTitle: 'بدء وضع الصوت',
         micTitle: 'تحويل الصوت إلى نص',
-        statusSpeaking: 'يتحدث...',
-        statusListening: 'يستمع...',
-        statusProcessing: 'جاري المعالجة...',
-        statusConnecting: 'جاري الاتصال...',
+        statusSpeaking: 'يتحدث…',
+        statusListening: 'يستمع…',
+        statusProcessing: 'يحضّر الإجابة…',
+        statusConnecting: 'جاري البدء…',
+        statusHintSpeaking: 'اضغط على الدائرة للمقاطعة',
+        statusHintListening: 'تحدّث الآن',
+        statusHintProcessing: 'سمعك فارس',
+        statusHintConnecting: 'لحظة واحدة',
         interruptHint: 'اضغط للمقاطعة',
         bubbleTitle: 'مرحباً، أنا فارس 👋',
         bubbleBody: 'تحتاج مساعدة بخصوص التجارة أو الجمارك أو الخدمات اللوجستية؟ اسألني عن أي شيء.',
@@ -444,8 +452,8 @@ const css = `
 }
 .icon-btn:hover { color: #2d3b76; background: rgba(45, 59, 118, 0.08); }
 #message-input {
-    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 11px 14px;
-    font-size: 14px; line-height: 1.4; border-radius: 14px; background: #f7f8fc; color: #1a2347;
+    width: 100%; border: 1px solid rgba(45, 59, 118, 0.16); outline: none; padding: 12px 14px;
+    font-size: 14px; line-height: 20px; border-radius: 14px; background: #f7f8fc; color: #1a2347;
     resize: none; overflow-y: auto; min-height: 44px; height: 44px; max-height: 120px; font-family: inherit;
     /* Hide the native inner scrollbar (the grey "pipe" on the right of
        the composer). The box itself still grows up to max-height, and
@@ -556,30 +564,42 @@ const css = `
 /* VOICE OVERLAY */
 #voice-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.98); z-index: 100; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 40px 20px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
 #voice-overlay.active { transform: translateY(0); }
-.voice-center-ring { width: 200px; height: 200px; border-radius: 50%; border: 4px solid rgba(45, 59, 118, 0.12); background: transparent; display: flex; justify-content: center; align-items: center; margin-top: 48px; position: relative; cursor: pointer; }
-.voice-center-ring:hover { border-color: #e2e8f0; }
+.voice-center-ring { width: 200px; height: 200px; border-radius: 50%; border: 4px solid rgba(45, 59, 118, 0.12); background: transparent; display: flex; justify-content: center; align-items: center; margin-top: 48px; position: relative; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.voice-center-ring.ring-listening { border-color: #22c55e; box-shadow: 0 0 0 10px rgba(34, 197, 94, 0.12); }
+.voice-center-ring.ring-processing { border-color: #f27141; box-shadow: 0 0 0 10px rgba(242, 113, 65, 0.14); }
+.voice-center-ring.ring-speaking { border-color: #2d3b76; box-shadow: 0 0 0 10px rgba(45, 59, 118, 0.14); }
+.voice-center-ring.ring-connecting { border-color: #94a3b8; }
 #visualizer { display: flex; align-items: center; justify-content: center; height: 80px; gap: 6px; pointer-events: none;}
 
 .dot { width: 10px; height: 10px; background: #cbd5e1; border-radius: 50%; display: none; }
-.state-connecting .dot { display: block; animation: bounce 1.4s infinite ease-in-out both; }
-.state-connecting .dot:nth-child(1) { animation-delay: -0.32s; background: #0f172a; }
-.state-connecting .dot:nth-child(2) { animation-delay: -0.16s; }
+.state-connecting .dot, .state-processing .dot { display: block; animation: bounce 1.2s infinite ease-in-out both; }
+.state-connecting .dot:nth-child(1) { animation-delay: -0.32s; background: #64748b; }
+.state-connecting .dot:nth-child(2) { animation-delay: -0.16s; background: #64748b; }
+.state-processing .dot { background: #f27141; }
+.state-processing .dot:nth-child(1) { animation-delay: -0.32s; }
+.state-processing .dot:nth-child(2) { animation-delay: -0.16s; }
 
-.bar { width: 6px; height: 20px; background: #0f172a; border-radius: 4px; display: none; }
-.state-listening .bar { display: block; animation: wave 1s infinite ease-in-out; }
+.bar { width: 6px; height: 20px; background: #22c55e; border-radius: 4px; display: none; }
+.state-listening .bar { display: block; animation: wave 0.7s infinite ease-in-out; }
 .state-listening .bar:nth-child(2) { animation-delay: 0.1s; height: 40px; }
 .state-listening .bar:nth-child(3) { animation-delay: 0.2s; height: 60px; }
 .state-listening .bar:nth-child(4) { animation-delay: 0.3s; height: 30px; }
 .state-listening .bar:nth-child(5) { animation-delay: 0.4s; height: 50px; }
 
-.speaker-dot { width: 24px; height: 24px; background: #0f172a; border-radius: 50%; display: none; position: relative; }
+.speaker-dot { width: 24px; height: 24px; background: #2d3b76; border-radius: 50%; display: none; position: relative; }
 .state-speaking .speaker-dot { display: block; }
-.state-speaking .speaker-dot::after { content: ''; position: absolute; top: -20px; left: -20px; right: -20px; bottom: -20px; border-radius: 50%; background: rgba(15, 23, 42, 0.1); animation: pulse-ring 1.5s infinite cubic-bezier(0.215, 0.61, 0.355, 1); }
+.state-speaking .speaker-dot::after { content: ''; position: absolute; top: -20px; left: -20px; right: -20px; bottom: -20px; border-radius: 50%; background: rgba(45, 59, 118, 0.16); animation: pulse-ring 1.2s infinite cubic-bezier(0.215, 0.61, 0.355, 1); }
 
 .voice-controls { width: 100%; display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; }
 .voice-btn-circle { width: 50px; height: 50px; border-radius: 50%; border: 1px solid #e2e8f0; background: white; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #64748b; }
 .voice-btn-circle:hover { background: #f8fafc; color: #0f172a; }
-#voice-status-text { font-size: 14px; font-weight: 500; color: #475569; pointer-events: none;}
+.voice-status-block { pointer-events: none; text-align: center; min-width: 140px; }
+#voice-status-text { font-size: 17px; font-weight: 700; line-height: 1.2; }
+#voice-status-text.is-listening { color: #16a34a; }
+#voice-status-text.is-processing { color: #c2410c; }
+#voice-status-text.is-speaking { color: #2d3b76; }
+#voice-status-text.is-connecting { color: #64748b; }
+#voice-status-hint { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: #64748b; }
 .interrupt-hint { position: absolute; bottom: -30px; font-size: 11px; color: #94a2b8; text-align: center; width: 100%; }
 
 @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
@@ -824,13 +844,14 @@ export default function Chatbot() {
         const el = messageInputRef.current;
         if (!el) return;
         el.style.transition = animate ? 'height 0.16s ease' : 'none';
-        // Never collapse below the resting single-line height. Setting
-        // height to 'auto' then to a raw scrollHeight (with
-        // box-sizing:border-box on every widget element) made the field
-        // look tall at rest and then snap smaller on the first click /
-        // keystroke, because scrollHeight and the CSS min-height were
-        // measuring different boxes.
         el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
+        // Empty or single-line drafts stay at 44px. Growing on focus, on
+        // mobile keyboard resize, or from scrollHeight of an empty field
+        // is what made the composer jump without a reason.
+        if (!el.value) {
+            if (animate) setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
+            return;
+        }
         const next = Math.max(COMPOSER_MIN_HEIGHT, Math.min(el.scrollHeight, 120));
         el.style.height = `${next}px`;
         if (animate) {
@@ -839,8 +860,11 @@ export default function Chatbot() {
     }
 
     useEffect(() => {
-        window.addEventListener('resize', autoResizeMessageInput);
-        return () => window.removeEventListener('resize', autoResizeMessageInput);
+        const onWinResize = () => {
+            if (messageInputRef.current?.value) autoResizeMessageInput();
+        };
+        window.addEventListener('resize', onWinResize);
+        return () => window.removeEventListener('resize', onWinResize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -1009,6 +1033,20 @@ export default function Chatbot() {
         });
     }
 
+    function playListenCue() {
+        playChime((ctx) => {
+            playTone(ctx, 740, ctx.currentTime, 0.09, 0.04);
+        });
+    }
+
+    function playSpeakCue() {
+        playChime((ctx) => {
+            const now = ctx.currentTime;
+            playTone(ctx, 880, now, 0.08, 0.04);
+            playTone(ctx, 1174, now + 0.07, 0.12, 0.035);
+        });
+    }
+
     function playReplyChime() {
         playChime((ctx) => {
             const now = ctx.currentTime;
@@ -1141,6 +1179,7 @@ export default function Chatbot() {
 
         if (!isVoiceActiveRef.current) return;
 
+        playSpeakCue();
         const lang = detectVoiceLanguage(text);
         // Markdown (bullets, bold, links) reads aloud as disjointed fragments, not
         // flowing speech — the voice-chat prompt now asks the model to avoid it,
@@ -1243,6 +1282,7 @@ export default function Chatbot() {
 
     function startListeningLoop() {
         setVisualizerState('listening');
+        playListenCue();
         audioChunksRef.current = [];
 
         try {
@@ -1796,8 +1836,6 @@ export default function Chatbot() {
                             <textarea id="message-input" ref={messageInputRef} value={input} onChange={e => {
                                 setInput(e.target.value);
                                 try { autoResizeMessageInput(); } catch (err) {}
-                            }} onFocus={() => {
-                                try { autoResizeMessageInput(); } catch (err) {}
                             }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
@@ -1815,7 +1853,7 @@ export default function Chatbot() {
                     </div>
 
                     <div id="voice-overlay" className={isVoiceActive ? 'active' : ''}>
-                        <div className="voice-center-ring" id="voice-interrupter" onClick={handleInterrupterClick}>
+                        <div className={`voice-center-ring ring-${voiceState}`} id="voice-interrupter" onClick={handleInterrupterClick}>
                             <div id="visualizer" className={`state-${voiceState}`}>
                                 <div className="dot"></div><div className="dot"></div><div className="dot"></div><div className="dot"></div><div className="dot"></div>
                                 <div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div><div className="bar"></div>
@@ -1825,7 +1863,10 @@ export default function Chatbot() {
                         </div>
                         <div className="voice-controls">
                             <button id="close-voice-btn" className="voice-btn-circle" onClick={closeVoice}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                            <div id="voice-status-text">{voiceState === 'speaking' ? t.statusSpeaking : voiceState === 'listening' ? t.statusListening : voiceState === 'processing' ? t.statusProcessing : t.statusConnecting}</div>
+                            <div className="voice-status-block">
+                                <div id="voice-status-text" className={`is-${voiceState}`}>{voiceState === 'speaking' ? t.statusSpeaking : voiceState === 'listening' ? t.statusListening : voiceState === 'processing' ? t.statusProcessing : t.statusConnecting}</div>
+                                <span id="voice-status-hint">{voiceState === 'speaking' ? t.statusHintSpeaking : voiceState === 'listening' ? t.statusHintListening : voiceState === 'processing' ? t.statusHintProcessing : t.statusHintConnecting}</span>
+                            </div>
                             <button className="voice-btn-circle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
                         </div>
                     </div>

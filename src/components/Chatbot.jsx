@@ -36,6 +36,47 @@ function stripPauseDashes(text) {
         .replace(/^,\s*/, '');
 }
 
+const CHAT_SESSION_KEY = 'sdrs_fares_session';
+const CHAT_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+
+function loadChatSession() {
+    try {
+        const raw = localStorage.getItem(CHAT_SESSION_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || typeof data.savedAt !== 'number' || Date.now() - data.savedAt > CHAT_SESSION_TTL_MS) {
+            localStorage.removeItem(CHAT_SESSION_KEY);
+            return null;
+        }
+        if (!Array.isArray(data.messages) || data.messages.length === 0) return null;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+function saveChatSession({ messages, history, isOpen }) {
+    try {
+        const slimMessages = (messages || []).slice(-40).map((m) => ({
+            role: m.role,
+            text: m.text,
+            time: m.time
+        }));
+        localStorage.setItem(CHAT_SESSION_KEY, JSON.stringify({
+            savedAt: Date.now(),
+            isOpen: Boolean(isOpen),
+            messages: slimMessages,
+            history: Array.isArray(history) ? history.slice(-40) : []
+        }));
+    } catch {
+        // Private mode / quota — chat still works for this page load.
+    }
+}
+
+function clearChatSession() {
+    try { localStorage.removeItem(CHAT_SESSION_KEY); } catch (e) {}
+}
+
 function sanitizeBotHtml(html) {
     const clean = DOMPurify.sanitize(html, {
         ALLOWED_TAGS: SANITIZE_ALLOWED_TAGS,
@@ -76,7 +117,7 @@ const CHATBOT_TEXT = {
         closeTitle: 'Close chat',
         quickPills: ['About SDRS', 'Services', 'Investment', 'Contact Us'],
         attachTitle: 'Attach File',
-        placeholderThinking: 'Assistant is thinking…',
+        placeholderThinking: 'Typing…',
         placeholderListening: 'Listening for speech…',
         placeholderAttachment: 'Add a note and send',
         placeholderDefault: 'Message',
@@ -91,11 +132,11 @@ const CHATBOT_TEXT = {
         statusHintProcessing: 'Fares heard you',
         statusHintConnecting: 'One moment',
         interruptHint: 'Tap to interrupt',
-        bubbleTitle: "Hi, I'm Fares 👋",
-        bubbleBody: 'Need help with trade, customs, or logistics? Ask me anything.',
+        bubbleTitle: "Hi, I'm Fares",
+        bubbleBody: 'Ask me about the zone.',
         bubbleDismiss: 'Dismiss',
         removeAttachment: 'Remove attachment',
-        thinkingLabel: 'Thinking…',
+        thinkingLabel: 'Typing…',
         fileTooLarge: (kb, mb) => `That file is too large (${kb} KB). Please attach something under ${mb} MB.`,
         unsupportedFileType: (type) => `That file type (${type || 'unknown'}) isn't supported yet. Please attach an image, a PDF, or a plain text file.`,
         speechToTextUnavailable: 'Speech-to-text is not available in this browser.',
@@ -122,7 +163,7 @@ const CHATBOT_TEXT = {
         closeTitle: 'إغلاق المحادثة',
         quickPills: ['عن SDRS', 'الخدمات', 'الاستثمار', 'اتصل بنا'],
         attachTitle: 'إرفاق ملف',
-        placeholderThinking: 'المساعد يفكر…',
+        placeholderThinking: 'يكتب…',
         placeholderListening: 'يستمع للصوت…',
         placeholderAttachment: 'أضف ملاحظة وأرسل',
         placeholderDefault: 'رسالة',
@@ -137,11 +178,11 @@ const CHATBOT_TEXT = {
         statusHintProcessing: 'سمعك فارس',
         statusHintConnecting: 'لحظة واحدة',
         interruptHint: 'اضغط للمقاطعة',
-        bubbleTitle: 'مرحباً، أنا فارس 👋',
-        bubbleBody: 'تحتاج مساعدة بخصوص التجارة أو الجمارك أو الخدمات اللوجستية؟ اسألني عن أي شيء.',
+        bubbleTitle: 'مرحباً، أنا فارس',
+        bubbleBody: 'اسألني عن المنطقة.',
         bubbleDismiss: 'إغلاق',
         removeAttachment: 'إزالة المرفق',
-        thinkingLabel: 'يُفكر…',
+        thinkingLabel: 'يكتب…',
         fileTooLarge: (kb, mb) => `هذا الملف كبير جدًا (${kb} كيلوبايت). يرجى إرفاق ملف أصغر من ${mb} ميجابايت.`,
         unsupportedFileType: (type) => `نوع هذا الملف (${type || 'غير معروف'}) غير مدعوم حاليًا. يرجى إرفاق صورة أو ملف PDF أو ملف نصي.`,
         speechToTextUnavailable: 'تحويل الصوت إلى نص غير متوفر في هذا المتصفح.',
@@ -416,7 +457,7 @@ const css = `
     transform: translateY(-50%) rotate(45deg);
 }
 #messages {
-    flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+    flex: 1; min-height: 0; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
     background: #f4f6fb;
 }
 #messages::-webkit-scrollbar { width: 8px; }
@@ -475,6 +516,10 @@ const css = `
        to feel instant, not animated (see autoResizeMessageInput()'s comment).
        A transition is applied inline, only for the brief moment the
        composer settles back down after sending/clearing. */
+}
+#message-input:not(.has-draft) {
+    height: 44px !important; min-height: 44px !important; max-height: 44px !important;
+    overflow: hidden !important;
 }
 #message-input.has-draft { max-height: 120px; border-radius: 14px; overflow-y: auto; }
 #message-input::placeholder {
@@ -536,8 +581,12 @@ const css = `
        once the composer icons are squeezed onto a narrow screen. */
     .icon-btn { width: 40px; height: 44px; }
     #send-btn { width: 44px; height: 44px; }
-    .chat-greeting-bubble { right: 16px; left: 16px; max-width: none; bottom: 86px; }
-    .chat-greeting-bubble::after { display: none; }
+    .chat-greeting-bubble {
+        left: auto; right: 16px; bottom: 86px;
+        width: min(200px, calc(100vw - 92px)); max-width: 200px;
+        padding: 10px 26px 10px 10px;
+    }
+    .chat-greeting-bubble::after { display: block; right: 22px; }
 }
 
 /* GREETING BUBBLE */
@@ -629,16 +678,15 @@ export default function Chatbot() {
     // currently has the site set to.
     const { language } = useLanguage();
     const t = CHATBOT_TEXT[language] || CHATBOT_TEXT.en;
+    const [savedSession] = useState(() => loadChatSession());
 
-    const [messages, setMessages] = useState([
-        // `time` is stored as a raw epoch ms number, not a pre-formatted
-        // string — formatMessageTime() below turns a fresh timestamp into
-        // "Just now" and an older one into an actual clock time, the same
-        // way most chat apps (WhatsApp, Slack, Messenger) label messages.
-        { role: 'bot', text: t.greeting, time: Date.now() }
-    ]);
+    const [messages, setMessages] = useState(() => (
+        savedSession?.messages?.length
+            ? savedSession.messages
+            : [{ role: 'bot', text: t.greeting, time: Date.now() }]
+    ));
     const [input, setInput] = useState('');
-    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(() => Boolean(savedSession?.isOpen));
     // The window is kept mounted for a bit after isChatOpen flips back to
     // false, and chatEntered drives the CSS class that actually animates —
     // this is what makes the close transition play instead of the window
@@ -856,18 +904,20 @@ export default function Chatbot() {
     // after sending/clearing, so that doesn't feel like an abrupt snap.
     // `animate` is only passed true from those two call sites.
     const COMPOSER_MIN_HEIGHT = 44;
-    function autoResizeMessageInput(animate = false) {
+    function autoResizeMessageInput(animate = false, draft = null) {
         const el = messageInputRef.current;
         if (!el) return;
-        const hasText = Boolean(el.value);
+        // On send, setInput('') has not painted yet, so el.value is still the
+        // old draft. Measuring that leftover text is why the empty field grew
+        // into a box after a few messages. Callers can pass the real draft.
+        const text = draft !== null ? draft : el.value;
+        const hasText = Boolean(text);
         el.classList.toggle('has-draft', hasText);
         el.style.transition = animate ? 'height 0.16s ease' : 'none';
+        el.style.minHeight = `${COMPOSER_MIN_HEIGHT}px`;
         el.style.maxHeight = hasText ? '120px' : `${COMPOSER_MIN_HEIGHT}px`;
         el.style.height = `${COMPOSER_MIN_HEIGHT}px`;
         el.style.overflowY = 'hidden';
-        // Empty field stays a single centered line. Growing on focus, on
-        // mobile keyboard resize, or from a wrapped placeholder is what
-        // made the composer jump or clip "Type a message".
         if (!hasText) {
             if (animate) setTimeout(() => { if (el) el.style.transition = 'none'; }, 180);
             return;
@@ -881,13 +931,18 @@ export default function Chatbot() {
     }
 
     useEffect(() => {
+        autoResizeMessageInput(false, input);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [input]);
+
+    useEffect(() => {
         const onWinResize = () => {
-            if (messageInputRef.current?.value) autoResizeMessageInput();
+            if (input) autoResizeMessageInput(false, input);
         };
         window.addEventListener('resize', onWinResize);
         return () => window.removeEventListener('resize', onWinResize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [input]);
 
     // Ticks a few times a minute so any message still showing "Just now"
     // gets re-evaluated and flips to its real timestamp once it crosses the
@@ -921,21 +976,18 @@ export default function Chatbot() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showGreetingBubble]);
 
-    // Clicking anywhere on the page outside the open chat window closes it,
-    // matching the behavior visitors expect from most chat widgets. Listening
-    // on mousedown (rather than click) catches the interaction a beat earlier,
-    // before any click handler on the page underneath has a chance to run.
+    // Menu, footer, logo, and in-page links are real <a href> navigations, so
+    // they reload the app. Keep the thread (and whether the window was open)
+    // for four hours, same idea as Intercom/Crisp, so a tap on the hamburger
+    // does not wipe Fares. Close only with the X — not with an outside click,
+    // which was firing on the menu before the page even changed.
     useEffect(() => {
-        if (!isChatOpen) return;
-        function handleOutsideClick(event) {
-            if (chatContainerRef.current && !chatContainerRef.current.contains(event.target)) {
-                hideChat();
-            }
-        }
-        document.addEventListener('mousedown', handleOutsideClick);
-        return () => document.removeEventListener('mousedown', handleOutsideClick);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isChatOpen]);
+        saveChatSession({
+            messages,
+            history: conversationHistoryRef.current,
+            isOpen: isChatOpen
+        });
+    }, [messages, isChatOpen]);
 
     // Dictation shouldn't keep listening forever just because it was started
     // once — clicking anywhere other than the composer (the message input,
@@ -1373,7 +1425,7 @@ export default function Chatbot() {
     // history from that display list can produce two user turns in a row, which
     // Gemini rejects outright. To avoid that, keep a separate ref that only grows
     // once a turn actually succeeds, so it always alternates cleanly.
-    const conversationHistoryRef = useRef([]);
+    const conversationHistoryRef = useRef(Array.isArray(savedSession?.history) ? savedSession.history : []);
     // Voice mode previously called the model fresh on every turn with no memory of
     // earlier exchanges in the same voice session, so a follow-up like "what about
     // pricing" had nothing to follow up on. Track it the same way text chat does.
@@ -1504,7 +1556,7 @@ export default function Chatbot() {
             speechBufferRef.current = spoken;
             const composed = [dictationBaseRef.current, spoken].filter(Boolean).join(' ');
             setInput(composed);
-            try { autoResizeMessageInput(); } catch (e) {}
+            try { autoResizeMessageInput(false, composed); } catch (e) {}
             // One-utterance-and-done on phones, same as WhatsApp/Gboard:
             // the OS already ended the phrase, and restarting would repeat it.
             if (isTouchDictation && isFinal && spoken) {
@@ -1629,15 +1681,10 @@ export default function Chatbot() {
         setMessages([{ role: 'bot', text: t.greeting, time: Date.now() }]);
         conversationHistoryRef.current = [];
         voiceHistoryRef.current = [];
+        clearChatSession();
         setSelectedAttachment(null);
         setInput('');
-        // setInput('') only clears the React-tracked value — it doesn't touch
-        // the textarea's own inline height, which the auto-grow handlers set
-        // directly on the DOM node. Without this, clearing a long, wrapped
-        // draft left the composer stuck at whatever tall height it had grown
-        // to, now empty, until the next keystroke recalculated it. Animate
-        // this one, since it's the "settle back down" case, not typing.
-        try { autoResizeMessageInput(true); } catch (e) {}
+        try { autoResizeMessageInput(true, ''); } catch (e) {}
     }
 
     async function handleSendMessage(messageOverride = null) {
@@ -1674,13 +1721,7 @@ export default function Chatbot() {
 
         appendMessage(finalMessage, 'user');
         setInput('');
-        // Same reasoning as clearConversation(): clearing the React state
-        // alone leaves a multi-line draft's grown textarea height in place,
-        // so the now-empty composer stays tall until something else happens
-        // to resize it (e.g. the next keystroke) instead of collapsing back
-        // down to a single line right away, like it should on send. Animate
-        // this one too, same "settle back down" case.
-        try { autoResizeMessageInput(true); } catch (e) {}
+        try { autoResizeMessageInput(true, ''); } catch (e) {}
         setSelectedAttachment(null);
         setIsThinking(true);
         playThinkingBlip();
@@ -1693,7 +1734,7 @@ export default function Chatbot() {
         // at least this long so a reply always arrives with a brief, natural
         // "thinking" beat — only the remaining time is waited, so slower
         // replies aren't delayed any further than they already are.
-        const MIN_THINKING_MS = 1000;
+        const MIN_THINKING_MS = 250;
         const thinkingStartedAt = Date.now();
         async function waitForMinThinkingTime() {
             const elapsed = Date.now() - thinkingStartedAt;
@@ -1872,8 +1913,9 @@ export default function Chatbot() {
                                 </div>
                             )}
                             <textarea id="message-input" className={input ? 'has-draft' : ''} ref={messageInputRef} value={input} onChange={e => {
-                                setInput(e.target.value);
-                                try { autoResizeMessageInput(); } catch (err) {}
+                                const next = e.target.value;
+                                setInput(next);
+                                try { autoResizeMessageInput(false, next); } catch (err) {}
                             }} onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();

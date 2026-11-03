@@ -11,6 +11,7 @@ import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
 import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus, isVoiceFallbackError } from './reliability.js';
 import { parseVoiceModelOutput } from './voiceReply.js';
+import { validateLeadPayload, isLeadEmailConfigured, sendLeadEmail } from './leadEmail.js';
 
 dotenv.config();
 
@@ -57,6 +58,14 @@ const chatRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many requests. Please wait a moment before sending another message.'
+});
+
+const leadRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 4,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many follow-up requests. Please wait a bit, or email commercial@sdrs.com.sa.'
 });
 
 // Must call the factory. `app.use(maintenanceMiddleware)` never runs next(),
@@ -291,6 +300,30 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         res.status(status === 400 ? 500 : status).json({
             reply: 'Sorry, say that one more time.',
             transcript: ''
+        });
+    }
+});
+
+app.post('/api/chat-lead', leadRateLimiter, async (req, res) => {
+    const check = validateLeadPayload(req.body);
+    if (!check.valid) {
+        return res.status(check.status).json({ ok: false, error: check.error });
+    }
+    if (!isLeadEmailConfigured()) {
+        return res.status(503).json({
+            ok: false,
+            error: 'Follow-up email is not set up yet. Please write to commercial@sdrs.com.sa.'
+        });
+    }
+    try {
+        await sendLeadEmail(check.lead);
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('\n❌ Chat lead email failed:', error?.message || error);
+        const status = error?.status === 503 ? 503 : 502;
+        res.status(status).json({
+            ok: false,
+            error: 'Could not send that just now. Please email commercial@sdrs.com.sa.'
         });
     }
 });

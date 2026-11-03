@@ -22,3 +22,7 @@ node_modules
 *.sw?
 .env
 dist/
+
+# Personal notes — keep off GitHub
+Chatbot-Build-Playbook.md
+Chatbot-Build-Playbook.pdf

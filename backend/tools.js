@@ -13,7 +13,7 @@ export const chatbotTools = [{
         },
         {
             name: 'capture_lead',
-            description: 'Use when the user wants a quote or to contact sales and has given a name, email, and inquiry. This does not save a lead. Repeat their details and give the SDRS phone and email. Never say the sales team was already notified.',
+            description: 'Use when the user wants a person to follow up. Do not save a lead here. Point them to the company/mobile/email form in this chat, which emails commercial@sdrs.com.sa. Never say the sales team was already notified.',
             parameters: {
                 type: 'OBJECT',
                 properties: {
@@ -54,7 +54,7 @@ export const executeTool = async (name, args) => {
             name: args.name,
             email: args.email,
             inquiry: args.inquiry,
-            message: 'Do not say this lead was saved. Ask the user to email info@sdrs.com.sa or call +966 13 813 4200 and repeat the inquiry.'
+            message: 'Do not say this lead was saved. Point the visitor to the company, mobile, and email form in this chat so the transcript can go to commercial@sdrs.com.sa.'
         };
     }
 

@@ -1,0 +1,127 @@
+const LEAD_TO = process.env.CHAT_LEAD_TO || 'commercial@sdrs.com.sa';
+const LEAD_FROM = process.env.CHAT_LEAD_FROM || 'Fares <it_support@sdrs.com.sa>';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function digitsOnly(value) {
+    return String(value || '').replace(/\D/g, '');
+}
+
+export function validateLeadPayload(body) {
+    const company = String(body?.company || '').trim();
+    const phone = String(body?.phone || '').trim();
+    const email = String(body?.email || '').trim().toLowerCase();
+    const website = String(body?.website || '').trim();
+    const language = body?.language === 'ar' ? 'ar' : 'en';
+    const transcript = Array.isArray(body?.transcript) ? body.transcript : [];
+
+    if (website) {
+        return { valid: false, status: 400, error: 'Invalid request.' };
+    }
+    if (company.length < 2 || company.length > 120) {
+        return { valid: false, status: 400, error: 'Please enter a company name.' };
+    }
+    if (!EMAIL_RE.test(email) || email.length > 160) {
+        return { valid: false, status: 400, error: 'Please enter a valid email.' };
+    }
+    const phoneDigits = digitsOnly(phone);
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+        return { valid: false, status: 400, error: 'Please enter a valid mobile number.' };
+    }
+    if (transcript.length > 40) {
+        return { valid: false, status: 413, error: 'Conversation is too long to send.' };
+    }
+
+    const cleanTranscript = transcript.slice(0, 40).map((row) => ({
+        role: row?.role === 'user' ? 'user' : 'bot',
+        text: String(row?.text || '').replace(/<[^>]*>/g, '').slice(0, 2000)
+    })).filter((row) => row.text.trim());
+
+    if (cleanTranscript.length === 0) {
+        return { valid: false, status: 400, error: 'There is no conversation to send yet.' };
+    }
+
+    return {
+        valid: true,
+        lead: { company, phone, email, language, transcript: cleanTranscript }
+    };
+}
+
+export function buildLeadEmail(lead) {
+    const lines = lead.transcript.map((row) => {
+        const who = row.role === 'user' ? 'Visitor' : 'Fares';
+        return `${who}: ${row.text}`;
+    });
+    const subject = `Fares chat — ${lead.company}`;
+    const text = [
+        'A visitor asked Fares to pass this chat to the commercial team.',
+        '',
+        `Company: ${lead.company}`,
+        `Mobile: ${lead.phone}`,
+        `Email: ${lead.email}`,
+        `Language: ${lead.language === 'ar' ? 'Arabic' : 'English'}`,
+        `Time: ${new Date().toISOString()}`,
+        '',
+        'Conversation:',
+        ...lines
+    ].join('\n');
+    return { to: LEAD_TO, from: LEAD_FROM, replyTo: lead.email, subject, text };
+}
+
+export function isLeadEmailConfigured() {
+    return Boolean(
+        process.env.RESEND_API_KEY
+        || (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+    );
+}
+
+export async function sendLeadEmail(lead) {
+    const payload = buildLeadEmail(lead);
+
+    if (process.env.RESEND_API_KEY) {
+        const response = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                from: payload.from,
+                to: [payload.to],
+                reply_to: payload.replyTo,
+                subject: payload.subject,
+                text: payload.text
+            })
+        });
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            throw new Error(`Resend rejected the email (${response.status}) ${detail}`.trim());
+        }
+        return { sent: true, via: 'resend' };
+    }
+
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT) || 587,
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
+        });
+        await transporter.sendMail({
+            from: payload.from,
+            to: payload.to,
+            replyTo: payload.replyTo,
+            subject: payload.subject,
+            text: payload.text
+        });
+        return { sent: true, via: 'smtp' };
+    }
+
+    const error = new Error('Chat lead email is not configured.');
+    error.status = 503;
+    throw error;
+}

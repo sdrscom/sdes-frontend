@@ -7,6 +7,7 @@ import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, M
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
 import { TimeoutError, withTimeout, isRetryableError, isBusyError, isVoiceFallbackError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
 import { parseVoiceModelOutput } from '../voiceReply.js';
+import { validateLeadPayload, buildLeadEmail, isLeadEmailConfigured } from '../leadEmail.js';
 
 const calls = [];
 
@@ -63,6 +64,7 @@ assert.match(sentInstruction, /Answer the question they asked/);
 assert.match(sentInstruction, /Book an Appointment/);
 assert.match(sentInstruction, /Operation Portal/);
 assert.match(sentInstruction, /This assistant cannot click those buttons/);
+assert.match(sentInstruction, /commercial@sdrs\.com\.sa/);
 assert.match(sentInstruction, /Do not offer a quote, a next step, or contact details unless they asked/);
 assert.match(sentInstruction, /in short/);
 assert.match(sentInstruction, /streamline, optimize, or maximize/);
@@ -89,6 +91,28 @@ assert.equal(tracking.status, undefined);
 
 const lead = await executeTool('capture_lead', { name: 'A', email: 'a@example.com', inquiry: 'warehouse quote' });
 assert.equal(lead.saved, false);
+assert.match(lead.message, /commercial@sdrs\.com\.sa/);
+
+assert.equal(validateLeadPayload({ company: 'A', phone: '123', email: 'bad' }).valid, false);
+const goodLead = validateLeadPayload({
+    company: 'Acme Logistics',
+    phone: '+966138134200',
+    email: 'ops@acme.sa',
+    transcript: [{ role: 'user', text: 'What warehouse space do you have?' }, { role: 'bot', text: 'We have closed warehouses in Dammam.' }]
+});
+assert.equal(goodLead.valid, true);
+const leadMail = buildLeadEmail(goodLead.lead);
+assert.equal(leadMail.to, 'commercial@sdrs.com.sa');
+assert.match(leadMail.subject, /Acme Logistics/);
+assert.match(leadMail.text, /Visitor: What warehouse space/);
+assert.equal(isLeadEmailConfigured(), false, 'tests must not think SMTP/Resend is configured');
+assert.equal(validateLeadPayload({
+    company: 'Acme',
+    phone: '+966138134200',
+    email: 'ops@acme.sa',
+    website: 'http://spam.test',
+    transcript: [{ role: 'user', text: 'hi' }]
+}).valid, false, 'honeypot submissions must be rejected');
 
 // Regression: the real SDK's response.functionCalls() throws for a bad finish reason
 // (SAFETY, RECITATION, LANGUAGE, OTHER) even when the model never asked for a tool.

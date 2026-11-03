@@ -65,6 +65,7 @@ assert.match(sentInstruction, /Book an Appointment/);
 assert.match(sentInstruction, /Operation Portal/);
 assert.match(sentInstruction, /This assistant cannot click those buttons/);
 assert.match(sentInstruction, /commercial@sdrs\.com\.sa/);
+assert.match(sentInstruction, /couple of real questions/);
 assert.match(sentInstruction, /Do not offer a quote, a next step, or contact details unless they asked/);
 assert.match(sentInstruction, /in short/);
 assert.match(sentInstruction, /streamline, optimize, or maximize/);

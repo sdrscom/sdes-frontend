@@ -13,7 +13,7 @@ export const chatbotTools = [{
         },
         {
             name: 'capture_lead',
-            description: 'Use when the user wants a person to follow up. Do not save a lead here. Point them to the company/mobile/email form in this chat, which emails commercial@sdrs.com.sa. Never say the sales team was already notified.',
+            description: 'Use when the user wants a person to follow up. Do not save a lead here. Invite them to the company/mobile/email form if it is showing under the chat, or give commercial@sdrs.com.sa. Never say the sales team was already notified.',
             parameters: {
                 type: 'OBJECT',
                 properties: {
@@ -54,7 +54,7 @@ export const executeTool = async (name, args) => {
             name: args.name,
             email: args.email,
             inquiry: args.inquiry,
-            message: 'Do not say this lead was saved. Point the visitor to the company, mobile, and email form in this chat so the transcript can go to commercial@sdrs.com.sa.'
+            message: 'Do not say this lead was saved. Invite them to the company, mobile, and email form if it is showing under the chat. You can also give commercial@sdrs.com.sa. Never say the commercial team was already emailed.'
         };
     }
 

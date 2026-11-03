@@ -38,6 +38,18 @@ function stripPauseDashes(text) {
 
 const CHAT_SESSION_KEY = 'sdrs_fares_session';
 const CHAT_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const LEAD_MIN_USER_TURNS = 2;
+const LEAD_SHOW_DELAY_MS = 2000;
+
+function isSmallTalk(text) {
+    const value = String(text || '').trim();
+    if (!value || value.length > 24) return false;
+    return /^(hi|hello|hey|salam|salaam|thanks|thank you|thx|bye|goodbye|ok|مرحبا|السلام عليكم|السلام|شكراً|شكرا|مع السلامة|تمام)!?[.]?$/i.test(value);
+}
+
+function countRealUserTurns(messages) {
+    return (messages || []).filter((m) => m.role === 'user' && m.text && !isSmallTalk(m.text)).length;
+}
 
 function loadChatSession() {
     try {
@@ -55,7 +67,7 @@ function loadChatSession() {
     }
 }
 
-function saveChatSession({ messages, history, isOpen, leadSent }) {
+function saveChatSession({ messages, history, isOpen, leadSent, leadDismissed, leadOffered }) {
     try {
         const slimMessages = (messages || []).slice(-40).map((m) => ({
             role: m.role,
@@ -66,6 +78,8 @@ function saveChatSession({ messages, history, isOpen, leadSent }) {
             savedAt: Date.now(),
             isOpen: Boolean(isOpen),
             leadSent: Boolean(leadSent),
+            leadDismissed: Boolean(leadDismissed),
+            leadOffered: Boolean(leadOffered),
             messages: slimMessages,
             history: Array.isArray(history) ? history.slice(-40) : []
         }));
@@ -131,6 +145,8 @@ const CHATBOT_TEXT = {
         leadSending: 'Sending…',
         leadDone: 'Sent. The commercial team has this chat and will follow up.',
         leadError: 'Could not send that just now. Email commercial@sdrs.com.sa.',
+        leadClose: 'Close',
+        leadLater: 'Maybe later',
         voiceTitle: 'Start Voice Mode',
         micTitle: 'Voice to Text',
         statusSpeaking: 'Speaking…',
@@ -186,6 +202,8 @@ const CHATBOT_TEXT = {
         leadSending: 'جارٍ الإرسال…',
         leadDone: 'تم الإرسال. الفريق التجاري استلم الحوار وبيتواصل معك.',
         leadError: 'تعذّر الإرسال الآن. راسل commercial@sdrs.com.sa.',
+        leadClose: 'إغلاق',
+        leadLater: 'ربما لاحقًا',
         voiceTitle: 'بدء وضع الصوت',
         micTitle: 'تحويل الصوت إلى نص',
         statusSpeaking: 'يتحدث…',
@@ -514,9 +532,20 @@ const css = `
     flex: 0 0 auto; margin: 0 12px 10px; padding: 12px; border-radius: 14px;
     background: #fff; border: 1px solid rgba(45, 59, 118, 0.14);
     box-shadow: 0 4px 12px rgba(26, 35, 71, 0.06);
+    animation: leadCardIn 0.28s ease-out;
 }
-.lead-card h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 700; color: #1a2347; }
-.lead-card p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: #5c6784; }
+.lead-card-head {
+    display: flex; align-items: flex-start; gap: 8px; margin: 0 0 4px;
+}
+.lead-card-head h3 { margin: 0; flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; color: #1a2347; }
+.lead-card-head p { margin: 0; flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; color: #1a2347; }
+.lead-dismiss {
+    flex: 0 0 auto; width: 32px; height: 32px; margin-block-start: -6px; margin-inline-end: -6px;
+    border: none; border-radius: 8px; background: transparent; color: #5c6784;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.lead-dismiss:hover { background: rgba(45, 59, 118, 0.08); color: #1a2347; }
+.lead-card > p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: #5c6784; }
 .lead-card label { display: block; margin-bottom: 8px; }
 .lead-card input {
     box-sizing: border-box; width: 100%; height: 40px; padding: 0 12px;
@@ -530,9 +559,20 @@ const css = `
     background: #2d3b76; color: #fff; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
 }
 .lead-submit:disabled { opacity: 0.6; cursor: wait; }
-.lead-error { margin: 8px 0 0; font-size: 12px; color: #b82227; }
+.lead-later {
+    width: 100%; height: 36px; margin-top: 4px; border: none; border-radius: 10px;
+    background: transparent; color: #5c6784; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.lead-later:hover { color: #1a2347; background: rgba(45, 59, 118, 0.06); }
+.lead-card .lead-error { margin: 8px 0 0; font-size: 12px; color: #b82227; }
 .lead-card.is-done { background: #f3fbf6; border-color: rgba(61, 220, 151, 0.35); }
-.lead-card.is-done p { margin: 0; color: #1a2347; }
+@keyframes leadCardIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lead-card { animation: none; }
+}
 #input-area {
     display: flex; align-items: flex-end; gap: 4px; padding: 10px 12px 12px;
     background: #fff; border-top: 1px solid rgba(45, 59, 118, 0.1); flex: 0 0 auto;
@@ -730,6 +770,10 @@ export default function Chatbot() {
     const [input, setInput] = useState('');
     const [isChatOpen, setIsChatOpen] = useState(() => Boolean(savedSession?.isOpen));
     const [leadSent, setLeadSent] = useState(() => Boolean(savedSession?.leadSent));
+    const [leadDismissed, setLeadDismissed] = useState(() => Boolean(savedSession?.leadDismissed));
+    const [leadOfferReady, setLeadOfferReady] = useState(() => (
+        Boolean(savedSession?.leadSent || savedSession?.leadOffered) && !savedSession?.leadDismissed
+    ));
     const [leadForm, setLeadForm] = useState({ company: '', phone: '', email: '', website: '' });
     const [leadSubmitting, setLeadSubmitting] = useState(false);
     const [leadError, setLeadError] = useState('');
@@ -1032,9 +1076,30 @@ export default function Chatbot() {
             messages,
             history: conversationHistoryRef.current,
             isOpen: isChatOpen,
-            leadSent
+            leadSent,
+            leadDismissed,
+            leadOffered: leadOfferReady
         });
-    }, [messages, isChatOpen, leadSent]);
+    }, [messages, isChatOpen, leadSent, leadDismissed, leadOfferReady]);
+
+    // Intercom/Crisp pattern: wait for a real exchange, then idle after the
+    // bot reply so the card does not cover the answer or interrupt typing.
+    useEffect(() => {
+        if (leadDismissed || leadSent || leadOfferReady) return undefined;
+
+        const last = messages[messages.length - 1];
+        const composing = Boolean(String(input || '').trim()) || isDictating;
+        const readyToOffer = countRealUserTurns(messages) >= LEAD_MIN_USER_TURNS
+            && last?.role === 'bot'
+            && !isThinking
+            && !isVoiceActive
+            && !composing;
+
+        if (!readyToOffer) return undefined;
+
+        const timer = setTimeout(() => setLeadOfferReady(true), LEAD_SHOW_DELAY_MS);
+        return () => clearTimeout(timer);
+    }, [messages, input, isThinking, isVoiceActive, isDictating, leadSent, leadDismissed, leadOfferReady]);
 
     // Dictation shouldn't keep listening forever just because it was started
     // once — clicking anywhere other than the composer (the message input,
@@ -1072,10 +1137,10 @@ export default function Chatbot() {
         setMessages(prev => [...prev, { role, text: nextText, time: Date.now() }]);
     }
 
-    function isSmallTalk(text) {
-        const value = String(text || '').trim();
-        if (!value || value.length > 24) return false;
-        return /^(hi|hello|hey|salam|salaam|thanks|thank you|thx|bye|goodbye|ok|مرحبا|السلام عليكم|السلام|شكراً|شكرا|مع السلامة|تمام)!?[.]?$/i.test(value);
+    function dismissLeadOffer() {
+        setLeadDismissed(true);
+        setLeadOfferReady(false);
+        setLeadError('');
     }
 
     async function handleLeadSubmit(event) {
@@ -1770,6 +1835,8 @@ export default function Chatbot() {
         voiceHistoryRef.current = [];
         clearChatSession();
         setLeadSent(false);
+        setLeadDismissed(false);
+        setLeadOfferReady(false);
         setLeadForm({ company: '', phone: '', email: '', website: '' });
         setLeadError('');
         setSelectedAttachment(null);
@@ -1990,13 +2057,23 @@ export default function Chatbot() {
                         </div>
                     )}
 
-                    {(leadSent || messages.some((m) => m.role === 'user' && !isSmallTalk(m.text))) && !isThinking && (
-                        <form className={`lead-card${leadSent ? ' is-done' : ''}`} onSubmit={handleLeadSubmit}>
+                    {!leadDismissed && (leadSent || leadOfferReady) && (
+                        <form className={`lead-card${leadSent ? ' is-done' : ''}`} onSubmit={handleLeadSubmit} dir={language === 'ar' ? 'rtl' : 'ltr'}>
                             {leadSent ? (
-                                <p>{t.leadDone}</p>
+                                <div className="lead-card-head">
+                                    <p>{t.leadDone}</p>
+                                    <button type="button" className="lead-dismiss" onClick={dismissLeadOffer} aria-label={t.leadClose} title={t.leadClose}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                </div>
                             ) : (
                                 <>
-                                    <h3>{t.leadTitle}</h3>
+                                    <div className="lead-card-head">
+                                        <h3>{t.leadTitle}</h3>
+                                        <button type="button" className="lead-dismiss" onClick={dismissLeadOffer} aria-label={t.leadClose} title={t.leadClose}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                        </button>
+                                    </div>
                                     <p>{t.leadBody}</p>
                                     <label>
                                         <input type="text" name="company" autoComplete="organization" required maxLength={120} placeholder={t.leadCompany} value={leadForm.company} onChange={(e) => setLeadForm((prev) => ({ ...prev, company: e.target.value }))} />
@@ -2009,6 +2086,7 @@ export default function Chatbot() {
                                     </label>
                                     <input className="lead-honeypot" type="text" name="website" tabIndex={-1} autoComplete="off" value={leadForm.website} onChange={(e) => setLeadForm((prev) => ({ ...prev, website: e.target.value }))} />
                                     <button className="lead-submit" type="submit" disabled={leadSubmitting}>{leadSubmitting ? t.leadSending : t.leadSubmit}</button>
+                                    <button type="button" className="lead-later" onClick={dismissLeadOffer}>{t.leadLater}</button>
                                     {leadError ? <p className="lead-error">{leadError}</p> : null}
                                 </>
                             )}

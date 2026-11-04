@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
-import { chatbotTools, executeTool } from './tools.js';
+import { executeTool } from './tools.js';
 import maintenanceMiddleware from './middleware/maintenanceMiddleware.js';
 import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
 import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
@@ -13,6 +13,7 @@ import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatu
 import { parseVoiceModelOutput } from './voiceReply.js';
 import { validateLeadPayload, isLeadEmailConfigured, sendLeadEmail } from './leadEmail.js';
 import { smallTalkReply } from './smallTalk.js';
+import { localFaqReply, geminiUnavailableReply } from './localFaq.js';
 
 dotenv.config();
 
@@ -91,9 +92,9 @@ function logTokenUsage(kind, response, startedAt) {
 // window on a live "hi", so the visitor waited ~24s for a 504. 3.8 is the
 // heavy Flash model; it is a voice fallback only, never the text backup.
 const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash';
 const GEMINI_VOICE_FALLBACK_MODEL = process.env.GEMINI_VOICE_FALLBACK_MODEL || 'gemini-3.8-flash';
-const GEMINI_ATTEMPT_MS = 5000;
+const GEMINI_ATTEMPT_MS = 8000;
 // Audio + a reply needs more than a short text turn. 5s cut the call off
 // mid-listen and the widget spoke "trouble processing that audio".
 const GEMINI_VOICE_ATTEMPT_MS = 10000;
@@ -107,7 +108,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             return res.status(validation.status).send(validation.error);
         }
 
-        const localReply = smallTalkReply(message, uiLanguage);
+        const localReply = smallTalkReply(message, uiLanguage) || localFaqReply(message, uiLanguage);
         if (localReply && !attachmentBase64) {
             return res.type('text').send(localReply);
         }
@@ -142,7 +143,6 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
                 const model = genAI.getGenerativeModel({
                     model: modelName,
                     systemInstruction: systemInstruction,
-                    tools: chatbotTools,
                     generationConfig: {
                         ...thinkingConfigForModel(modelName),
                         maxOutputTokens: 400
@@ -157,7 +157,8 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
                 );
                 logTokenUsage('chat', nextResult?.response, startedAt);
                 return { result: nextResult, chat: nextChat };
-            }
+            },
+            isVoiceFallbackError
         );
         let result = firstResult;
         const callList = readFunctionCalls(result?.response);
@@ -197,23 +198,13 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         res.end();
     } catch (error) {
         console.error('\n❌ Text Chat Error:', error);
-        // Regression fix: this previously always sent HTTP 500, even for a Gemini
-        // 429 (quota exhausted) or 400 (bad request) — so the frontend's
-        // "usage limit reached" branch, which checked response.status === 429, could
-        // never actually trigger; users only ever saw the generic apology. Forward
-        // the real upstream status when it's a valid HTTP error code so the widget
-        // can tell these cases apart, and fall back to 500 only for genuine
-        // unknown/network failures.
-        const upstreamStatus = geminiHttpStatus(error);
-        const status = (upstreamStatus >= 400 && upstreamStatus < 600) ? upstreamStatus : 500;
-        const message = status === 429
-            ? 'Our assistant has reached its usage limit for now. Please try again later, or reach our team directly at info@sdrs.com.sa.'
-            : status === 503 || /high demand|service unavailable/i.test(String(error?.message || ''))
-                ? 'The assistant is busy right now. Please try again in a moment.'
-                : status === 504
-                    ? 'The assistant is busy right now. Please try again in a moment.'
-                    : 'Sorry, the assistant could not respond right now.';
-        res.status(status === 503 ? 503 : status).send(message);
+        // Gemini is an outside API. If it hangs or is packed, still answer as
+        // Fares: known topics from local knowledge, otherwise phone and pages.
+        // Never show "busy" or "try a shorter question" to a visitor.
+        const asked = req.body?.message;
+        const lang = req.body?.uiLanguage;
+        const fallback = localFaqReply(asked, lang) || geminiUnavailableReply(lang);
+        return res.type('text').send(fallback);
     }
 });
 

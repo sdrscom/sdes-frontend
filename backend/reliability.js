@@ -84,8 +84,11 @@ export function isVoiceFallbackError(error) {
 // valid, thinkingLevel "minimal" is not.
 export function thinkingConfigForModel(modelName) {
     const name = String(modelName || '').toLowerCase();
-    if (name.includes('flash-lite') || name.includes('flash_lite')) {
+    if (name.includes('flash-lite') || name.includes('flash_lite') || name.includes('3.6-flash')) {
         return { thinkingConfig: { thinkingLevel: 'minimal' } };
+    }
+    if (name.includes('3.8-flash') || name.includes('3.7-flash')) {
+        return { thinkingConfig: { thinkingLevel: 'low' } };
     }
     return { thinkingConfig: { thinkingBudget: 0 } };
 }

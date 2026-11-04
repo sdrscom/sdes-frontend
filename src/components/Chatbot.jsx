@@ -184,9 +184,9 @@ const CHATBOT_TEXT = {
         languageNameUrdu: 'Urdu',
         attachmentReadFailed: 'Sorry, I could not read that attachment. Please try again.',
         messageTooLong: (len, max) => `That message is too long (${len} characters). Please keep it under ${max} characters.`,
-        noResponse: 'Sorry, the assistant could not respond right now.',
-        noReplyGenerated: 'Sorry, I could not generate a reply right now.',
-        reachFailed: 'Sorry, I could not reach the assistant right now.'
+        noResponse: "I don't have that on hand just now. Call +966 13 813 4200 or email info@sdrs.com.sa.",
+        noReplyGenerated: "I don't have that on hand just now. Call +966 13 813 4200 or email info@sdrs.com.sa.",
+        reachFailed: "I couldn't reach the team just now. Call +966 13 813 4200 or email info@sdrs.com.sa.",
     },
     ar: {
         greeting: 'مرحباً، أنا فارس. كيف أقدر أساعدك؟',
@@ -243,9 +243,9 @@ const CHATBOT_TEXT = {
         languageNameUrdu: 'الأردية',
         attachmentReadFailed: 'عذرًا، تعذّر قراءة هذا المرفق. يرجى المحاولة مرة أخرى.',
         messageTooLong: (len, max) => `هذه الرسالة طويلة جدًا (${len} حرفًا). يرجى أن تكون أقل من ${max} حرفًا.`,
-        noResponse: 'عذرًا، تعذّر على المساعد الرد حاليًا.',
-        noReplyGenerated: 'عذرًا، تعذّر إنشاء رد الآن.',
-        reachFailed: 'عذرًا، تعذّر الوصول إلى المساعد حاليًا.'
+        noResponse: 'ما قدرت أكملها من هنا الحين. اتصل على 4200 813 13 966+ أو راسل info@sdrs.com.sa.',
+        noReplyGenerated: 'ما قدرت أكملها من هنا الحين. اتصل على 4200 813 13 966+ أو راسل info@sdrs.com.sa.',
+        reachFailed: 'تعذّر الوصول الآن. اتصل على 4200 813 13 966+ أو راسل info@sdrs.com.sa.',
     }
 };
 

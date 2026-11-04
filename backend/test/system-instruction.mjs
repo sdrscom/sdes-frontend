@@ -9,6 +9,7 @@ import { TimeoutError, withTimeout, isRetryableError, isBusyError, isVoiceFallba
 import { parseVoiceModelOutput } from '../voiceReply.js';
 import { validateLeadPayload, buildLeadEmail, isLeadEmailConfigured } from '../leadEmail.js';
 import { isSmallTalk, smallTalkReply } from '../smallTalk.js';
+import { localFaqReply, geminiUnavailableReply } from '../localFaq.js';
 
 const calls = [];
 
@@ -319,6 +320,12 @@ assert.match(smallTalkReply('hi'), /Fares/);
 assert.equal(smallTalkReply('hi', 'ar'), 'مرحباً، أنا فارس. كيف أقدر أساعدك؟');
 assert.equal(smallTalkReply('thanks'), "You're welcome.");
 assert.equal(smallTalkReply('What warehouse space do you have?'), null);
+assert.match(localFaqReply('Tell me about facilities'), /351,000/);
+assert.match(localFaqReply('Services'), /containers/);
+assert.match(localFaqReply('Contact Us'), /\+966 13 813 4200/);
+assert.equal(localFaqReply('What is the current TEU count this year?'), null);
+assert.match(geminiUnavailableReply(), /\+966 13 813 4200/);
+assert.match(geminiUnavailableReply('ar'), /info@sdrs\.com\.sa/);
 
 assert.equal(isBusyError(new TimeoutError('slow')), true, 'a hung Gemini call should fall back to another model');
 assert.equal(isBusyError({ status: 404 }), true, 'a missing model id should fall back to the next model');
@@ -349,8 +356,13 @@ assert.equal(fallbackReply, 'ok-from-lite', 'withModelFallback must use the next
 assert.deepEqual(triedModels, ['gemini-3.8-flash', 'gemini-flash-lite-latest'], 'withModelFallback must try primary then fallback');
 assert.deepEqual(
     thinkingConfigForModel('gemini-3.8-flash'),
-    { thinkingConfig: { thinkingBudget: 0 } },
-    '3.8-flash turns thinking off with thinkingBudget 0'
+    { thinkingConfig: { thinkingLevel: 'low' } },
+    '3.8-flash uses thinkingLevel low; minimal is not allowed'
+);
+assert.deepEqual(
+    thinkingConfigForModel('gemini-3.6-flash'),
+    { thinkingConfig: { thinkingLevel: 'minimal' } },
+    '3.6-flash supports thinkingLevel minimal'
 );
 assert.deepEqual(
     thinkingConfigForModel('gemini-flash-lite-latest'),

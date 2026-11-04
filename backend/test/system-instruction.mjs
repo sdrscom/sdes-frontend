@@ -8,6 +8,7 @@ import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HI
 import { TimeoutError, withTimeout, isRetryableError, isBusyError, isVoiceFallbackError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
 import { parseVoiceModelOutput } from '../voiceReply.js';
 import { validateLeadPayload, buildLeadEmail, isLeadEmailConfigured } from '../leadEmail.js';
+import { isSmallTalk, smallTalkReply } from '../smallTalk.js';
 
 const calls = [];
 
@@ -312,7 +313,15 @@ await assert.rejects(
 );
 assert.equal(quotaAttempts, 1, 'withSingleRetry must not retry a 429, only call the function once');
 
+assert.equal(isSmallTalk('hi'), true);
+assert.equal(isSmallTalk('What warehouse space do you have?'), false);
+assert.match(smallTalkReply('hi'), /Fares/);
+assert.equal(smallTalkReply('hi', 'ar'), 'مرحباً، أنا فارس. كيف أقدر أساعدك؟');
+assert.equal(smallTalkReply('thanks'), "You're welcome.");
+assert.equal(smallTalkReply('What warehouse space do you have?'), null);
+
 assert.equal(isBusyError(new TimeoutError('slow')), true, 'a hung Gemini call should fall back to another model');
+assert.equal(isBusyError({ status: 404 }), true, 'a missing model id should fall back to the next model');
 assert.equal(isBusyError({ status: 503 }), true, 'a 503 high-demand error should fall back to another model');
 assert.equal(isBusyError({ status: 400 }), false, 'a bad request must not be retried on a different model');
 assert.equal(

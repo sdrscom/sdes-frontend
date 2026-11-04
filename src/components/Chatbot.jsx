@@ -51,6 +51,14 @@ function countRealUserTurns(messages) {
     return (messages || []).filter((m) => m.role === 'user' && m.text && !isSmallTalk(m.text)).length;
 }
 
+function localSmallTalkReply(text, t) {
+    const value = String(text || '').trim();
+    if (/^(thanks|thank you|thx|شكراً|شكرا)!?[.]?$/i.test(value)) return t.smallTalkThanks;
+    if (/^(bye|goodbye|مع السلامة)!?[.]?$/i.test(value)) return t.smallTalkBye;
+    if (/^(ok|تمام)!?[.]?$/i.test(value)) return t.smallTalkOk;
+    return t.greeting;
+}
+
 function loadChatSession() {
     try {
         const raw = localStorage.getItem(CHAT_SESSION_KEY);
@@ -123,6 +131,9 @@ function sanitizeBotHtml(html) {
 const CHATBOT_TEXT = {
     en: {
         greeting: "Hi, I'm Fares. What can I help you with?",
+        smallTalkThanks: "You're welcome.",
+        smallTalkBye: 'Take care.',
+        smallTalkOk: 'Okay.',
         headerTitle: 'Fares',
         toggleLabel: 'Chat with Fares',
         toggleTitle: 'Chat with Fares',
@@ -146,7 +157,6 @@ const CHATBOT_TEXT = {
         leadDone: 'Sent. The commercial team has this chat and will follow up.',
         leadError: 'Could not send that just now. Email commercial@sdrs.com.sa.',
         leadClose: 'Close',
-        leadLater: 'Maybe later',
         voiceTitle: 'Start Voice Mode',
         micTitle: 'Voice to Text',
         statusSpeaking: 'Speaking…',
@@ -180,6 +190,9 @@ const CHATBOT_TEXT = {
     },
     ar: {
         greeting: 'مرحباً، أنا فارس. كيف أقدر أساعدك؟',
+        smallTalkThanks: 'العفو.',
+        smallTalkBye: 'مع السلامة.',
+        smallTalkOk: 'تمام.',
         headerTitle: 'فارس',
         toggleLabel: 'تحدث مع فارس',
         toggleTitle: 'تحدث مع فارس',
@@ -203,7 +216,6 @@ const CHATBOT_TEXT = {
         leadDone: 'تم الإرسال. الفريق التجاري استلم الحوار وبيتواصل معك.',
         leadError: 'تعذّر الإرسال الآن. راسل commercial@sdrs.com.sa.',
         leadClose: 'إغلاق',
-        leadLater: 'ربما لاحقًا',
         voiceTitle: 'بدء وضع الصوت',
         micTitle: 'تحويل الصوت إلى نص',
         statusSpeaking: 'يتحدث…',
@@ -559,11 +571,6 @@ const css = `
     background: #2d3b76; color: #fff; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
 }
 .lead-submit:disabled { opacity: 0.6; cursor: wait; }
-.lead-later {
-    width: 100%; height: 36px; margin-top: 4px; border: none; border-radius: 10px;
-    background: transparent; color: #5c6784; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-}
-.lead-later:hover { color: #1a2347; background: rgba(45, 59, 118, 0.06); }
 .lead-card .lead-error { margin: 8px 0 0; font-size: 12px; color: #b82227; }
 .lead-card.is-done { background: #f3fbf6; border-color: rgba(61, 220, 151, 0.35); }
 @keyframes leadCardIn {
@@ -1880,12 +1887,24 @@ export default function Chatbot() {
         setInput('');
         try { autoResizeMessageInput(true, ''); } catch (e) {}
         setSelectedAttachment(null);
+
+        const history = conversationHistoryRef.current;
+        if (!attachment && isSmallTalk(typedMessage)) {
+            const reply = localSmallTalkReply(typedMessage, t);
+            appendMessage(reply, 'bot');
+            conversationHistoryRef.current = [
+                ...history,
+                { role: 'user', parts: [{ text: finalMessage }] },
+                { role: 'model', parts: [{ text: reply }] }
+            ];
+            return;
+        }
+
         setIsThinking(true);
         playThinkingBlip();
 
         // Snapshot before this turn. Only committed to conversationHistoryRef once
         // we know the exchange actually succeeded.
-        const history = conversationHistoryRef.current;
         // Even when Gemini answers almost instantly, popping the reply in
         // immediately feels jarring/robotic. Keep the typing indicator up for
         // at least this long so a reply always arrives with a brief, natural
@@ -2086,7 +2105,6 @@ export default function Chatbot() {
                                     </label>
                                     <input className="lead-honeypot" type="text" name="website" tabIndex={-1} autoComplete="off" value={leadForm.website} onChange={(e) => setLeadForm((prev) => ({ ...prev, website: e.target.value }))} />
                                     <button className="lead-submit" type="submit" disabled={leadSubmitting}>{leadSubmitting ? t.leadSending : t.leadSubmit}</button>
-                                    <button type="button" className="lead-later" onClick={dismissLeadOffer}>{t.leadLater}</button>
                                     {leadError ? <p className="lead-error">{leadError}</p> : null}
                                 </>
                             )}

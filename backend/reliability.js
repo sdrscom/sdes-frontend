@@ -49,7 +49,8 @@ export function isBusyError(error) {
     const status = geminiHttpStatus(error);
     const message = String(error?.message || '');
     if (/high demand|service unavailable/i.test(message)) return true;
-    return status === 503 || status === 429 || (status >= 500 && status < 600);
+    // A missing/renamed model id should try the next one, not fail the turn.
+    return status === 404 || status === 503 || status === 429 || (status >= 500 && status < 600);
 }
 
 export async function withModelFallback(models, runAttempt, shouldFallback = isBusyError) {

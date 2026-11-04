@@ -12,6 +12,7 @@ import { validateChatRequest, validateHistoryPayload } from './validation.js';
 import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus, isVoiceFallbackError } from './reliability.js';
 import { parseVoiceModelOutput } from './voiceReply.js';
 import { validateLeadPayload, isLeadEmailConfigured, sendLeadEmail } from './leadEmail.js';
+import { smallTalkReply } from './smallTalk.js';
 
 dotenv.config();
 
@@ -86,12 +87,13 @@ function logTokenUsage(kind, response, startedAt) {
     console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
 }
 
-// New Gemini keys cannot call gemini-2.5-flash (404). Lite answers in a few
-// seconds; 3.8-flash often sits busy for the full attempt window and made
-// both text and live voice feel stuck. Use Lite first, 3.8 as backup, 6s each.
-const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
-const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.8-flash';
-const GEMINI_ATTEMPT_MS = 8000;
+// Pin Flash-Lite. The -latest alias and 3.8-flash both hung the full attempt
+// window on a live "hi", so the visitor waited ~24s for a 504. 3.8 is the
+// heavy Flash model; it is a voice fallback only, never the text backup.
+const GEMINI_PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest';
+const GEMINI_VOICE_FALLBACK_MODEL = process.env.GEMINI_VOICE_FALLBACK_MODEL || 'gemini-3.8-flash';
+const GEMINI_ATTEMPT_MS = 5000;
 // Audio + a reply needs more than a short text turn. 5s cut the call off
 // mid-listen and the widget spoke "trouble processing that audio".
 const GEMINI_VOICE_ATTEMPT_MS = 10000;
@@ -103,6 +105,11 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         const validation = validateChatRequest(req.body);
         if (!validation.valid) {
             return res.status(validation.status).send(validation.error);
+        }
+
+        const localReply = smallTalkReply(message, uiLanguage);
+        if (localReply && !attachmentBase64) {
+            return res.type('text').send(localReply);
         }
 
         // Normalize and sanitize incoming history so Gemini always receives a valid,
@@ -131,6 +138,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         const { result: firstResult, chat } = await withModelFallback(
             [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL],
             async (modelName) => {
+                console.log(`[gemini:chat] trying ${modelName}`);
                 const model = genAI.getGenerativeModel({
                     model: modelName,
                     systemInstruction: systemInstruction,
@@ -160,12 +168,16 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             const toolResult = await executeTool(toolCall.name, toolCall.args);
 
             try {
-                result = await chat.sendMessage([{
-                    functionResponse: {
-                        name: toolCall.name,
-                        response: toolResult
-                    }
-                }]);
+                result = await withTimeout(
+                    () => chat.sendMessage([{
+                        functionResponse: {
+                            name: toolCall.name,
+                            response: toolResult
+                        }
+                    }]),
+                    GEMINI_ATTEMPT_MS,
+                    `Gemini chat tool-followup`
+                );
                 finalMessage = readReplyText(result?.response) || finalMessage;
             } catch (toolError) {
                 console.error('Tool follow-up failed:', toolError);
@@ -199,7 +211,7 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             : status === 503 || /high demand|service unavailable/i.test(String(error?.message || ''))
                 ? 'The assistant is busy right now. Please try again in a moment.'
                 : status === 504
-                    ? 'That took longer than expected to answer. Please try asking again, perhaps with a shorter question.'
+                    ? 'The assistant is busy right now. Please try again in a moment.'
                     : 'Sorry, the assistant could not respond right now.';
         res.status(status === 503 ? 503 : status).send(message);
     }
@@ -266,7 +278,7 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         // it through a chat session with sanitized history instead, same as text chat.
         const sanitizedHistory = sanitizeHistoryForGemini(history, undefined);
         const result = await withModelFallback(
-            [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL],
+            [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_VOICE_FALLBACK_MODEL],
             async (modelName) => {
                 const voiceModel = genAI.getGenerativeModel({
                     model: modelName,

@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from '../knowledgeBase.js';
-import { chatbotTools, executeTool } from '../tools.js';
+import { executeTool } from '../tools.js';
 import { readFunctionCalls, readReplyText } from '../readFunctionCalls.js';
-import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
+import { sanitizeHistoryForGemini, enforceAlternatingRoles, buildMessageParts, lastUserText, MAX_HISTORY_MESSAGES } from '../chatHistory.js';
 import { validateChatRequest, validateHistoryPayload, MAX_MESSAGE_LENGTH, MAX_HISTORY_JSON_BYTES } from '../validation.js';
 import { TimeoutError, withTimeout, isRetryableError, isBusyError, isVoiceFallbackError, withSingleRetry, withModelFallback, thinkingConfigForModel, geminiHttpStatus } from '../reliability.js';
 import { parseVoiceModelOutput } from '../voiceReply.js';
 import { validateLeadPayload, buildLeadEmail, isLeadEmailConfigured } from '../leadEmail.js';
 import { isSmallTalk, smallTalkReply } from '../smallTalk.js';
-import { localFaqReply, geminiUnavailableReply } from '../localFaq.js';
+import { localFaqReply, geminiUnavailableReply, isVagueFollowUp } from '../localFaq.js';
+import { generateGeminiTurn } from '../geminiClient.js';
 
 const calls = [];
 
@@ -35,20 +35,25 @@ globalThis.fetch = async (url, init) => {
 };
 
 const systemInstruction = loadKnowledgeBase();
-const model = new GoogleGenerativeAI('test-key').getGenerativeModel({
-    model: 'gemini-3.8-flash',
+const result = await generateGeminiTurn({
+    apiKey: 'test-key',
+    modelName: 'gemini-3.5-flash-lite',
     systemInstruction,
-    tools: chatbotTools,
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } }
+    history: [],
+    userParts: [{ text: 'What are you?' }],
+    maxOutputTokens: 1024,
+    timeoutMs: 5000,
+    label: 'chat'
 });
-
-const result = await model.startChat({ history: [] }).sendMessage('What are you?');
-const reply = result.response.text();
+const reply = readReplyText(result.response);
 const body = calls[0]?.body;
 const sentInstruction = JSON.stringify(body?.systemInstruction ?? '');
 
 assert.equal(calls.length, 1, 'expected one Gemini request');
-assert.equal(body?.generationConfig?.thinkingConfig?.thinkingBudget, 0, 'thinking should be disabled to keep replies fast');
+assert.match(String(calls[0]?.url || ''), /gemini-3\.5-flash-lite:generateContent/);
+assert.equal(body?.generationConfig?.thinkingConfig?.thinkingLevel, 'minimal', 'Flash-Lite must send thinkingLevel minimal, not a thinkingBudget');
+assert.equal(body?.generationConfig?.thinkingConfig?.thinkingBudget, undefined, 'thinkingBudget on Gemini 3 returns 400');
+assert.equal(body?.tools, undefined, 'text chat must not send function-calling tools');
 assert.match(sentInstruction, /SDRS Intelligent Trade Assistant/);
 assert.match(sentInstruction, /King Abdulaziz Port/);
 assert.match(sentInstruction, /0% VAT/);
@@ -74,7 +79,20 @@ assert.match(sentInstruction, /streamline, optimize, or maximize/);
 assert.match(sentInstruction, /facitioites/);
 assert.equal(reply, 'I am the SDRS Intelligent Trade Assistant.');
 assert.deepEqual(readFunctionCalls(result.response), []);
-assert.equal(typeof result.response.functionCalls, 'function');
+assert.equal(
+    readReplyText({
+        candidates: [{
+            content: {
+                parts: [
+                    { thought: true, text: 'internal reasoning must not be shown' },
+                    { text: 'Closed warehouses from 360 m².' }
+                ]
+            }
+        }]
+    }),
+    'Closed warehouses from 360 m².',
+    'thought parts must not be concatenated into the visitor-facing reply'
+);
 assert.deepEqual(readFunctionCalls({
     functionCalls: () => [{ name: 'track_container', args: { container_id: 'ABCU1234567' } }]
 }), [{ name: 'track_container', args: { container_id: 'ABCU1234567' } }]);
@@ -128,10 +146,16 @@ globalThis.fetch = async () => new Response(JSON.stringify({
     }]
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-const blockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
-    .startChat({ history: [] })
-    .sendMessage('Tell me about Facilities');
+const blockedResult = await generateGeminiTurn({
+    apiKey: 'test-key',
+    modelName: 'gemini-3.5-flash-lite',
+    systemInstruction,
+    history: [],
+    userParts: [{ text: 'Tell me about Facilities' }],
+    maxOutputTokens: 1024,
+    timeoutMs: 5000,
+    label: 'chat'
+});
 
 assert.doesNotThrow(() => readFunctionCalls(blockedResult.response), 'readFunctionCalls must not throw on a blocked finish reason');
 assert.deepEqual(readFunctionCalls(blockedResult.response), []);
@@ -142,13 +166,63 @@ globalThis.fetch = async () => new Response(JSON.stringify({
     promptFeedback: { blockReason: 'OTHER' }
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-const fullyBlockedResult = await new GoogleGenerativeAI('test-key')
-    .getGenerativeModel({ model: 'gemini-3.8-flash', systemInstruction, tools: chatbotTools })
-    .startChat({ history: [] })
-    .sendMessage('How are you');
+const fullyBlockedResult = await generateGeminiTurn({
+    apiKey: 'test-key',
+    modelName: 'gemini-3.5-flash-lite',
+    systemInstruction,
+    history: [],
+    userParts: [{ text: 'How are you' }],
+    maxOutputTokens: 1024,
+    timeoutMs: 5000,
+    label: 'chat'
+});
 
 assert.doesNotThrow(() => readFunctionCalls(fullyBlockedResult.response));
 assert.equal(readReplyText(fullyBlockedResult.response), '');
+
+globalThis.fetch = async (_url, init) => new Promise((_, reject) => {
+    const abort = () => {
+        const err = new Error('This operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+    };
+    if (init?.signal?.aborted) abort();
+    else init.signal.addEventListener('abort', abort, { once: true });
+});
+await assert.rejects(
+    () => generateGeminiTurn({
+        apiKey: 'test-key',
+        modelName: 'gemini-3.5-flash-lite',
+        systemInstruction: 'x',
+        history: [],
+        userParts: [{ text: 'hi' }],
+        maxOutputTokens: 16,
+        timeoutMs: 30,
+        label: 'timeout-test'
+    }),
+    TimeoutError,
+    'generateGeminiTurn must abort a hung REST call instead of racing and leaving it running'
+);
+
+globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { message: 'This model is currently experiencing high demand.' }
+}), { status: 503, headers: { 'Content-Type': 'application/json' } });
+try {
+    await generateGeminiTurn({
+        apiKey: 'test-key',
+        modelName: 'gemini-3.5-flash-lite',
+        systemInstruction: 'x',
+        history: [],
+        userParts: [{ text: 'hi' }],
+        maxOutputTokens: 16,
+        timeoutMs: 5000,
+        label: 'busy-test'
+    });
+    assert.fail('expected generateGeminiTurn to throw on HTTP 503');
+} catch (error) {
+    assert.equal(error.status, 503, 'REST 503 must set error.status so model fallback can run');
+    assert.match(String(error.message), /high demand/);
+}
 
 // Regression: Gemini's chat API rejects a transcript that doesn't strictly
 // alternate user/model turns. This happened live whenever a prior turn failed —
@@ -324,6 +398,13 @@ assert.match(localFaqReply('Tell me about facilities'), /351,000/);
 assert.match(localFaqReply('Services'), /containers/);
 assert.match(localFaqReply('Contact Us'), /\+966 13 813 4200/);
 assert.equal(localFaqReply('What is the current TEU count this year?'), null);
+assert.equal(localFaqReply('what'), null, 'a bare "what" is not itself a facilities question');
+assert.equal(isVagueFollowUp('what'), true);
+assert.equal(isVagueFollowUp('What warehouse space do you have?'), false);
+assert.match(localFaqReply(lastUserText([
+    { role: 'user', parts: [{ text: 'tell me about facilities' }] },
+    { role: 'model', parts: [{ text: 'Closed warehouses from 360 m².' }] }
+])), /351,000/, 'a short follow-up should reuse the last user topic against local knowledge');
 assert.match(geminiUnavailableReply(), /\+966 13 813 4200/);
 assert.match(geminiUnavailableReply('ar'), /info@sdrs\.com\.sa/);
 

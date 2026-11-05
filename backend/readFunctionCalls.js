@@ -20,7 +20,7 @@ export function readReplyText(response) {
     const parts = response?.candidates?.[0]?.content?.parts;
     if (Array.isArray(parts)) {
         const text = parts
-            .map(part => (typeof part?.text === 'string' ? part.text : ''))
+            .map(part => (part?.thought ? '' : (typeof part?.text === 'string' ? part.text : '')))
             .join('')
             .trim();
         if (text) return text;

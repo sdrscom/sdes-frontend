@@ -35,6 +35,12 @@ export function geminiUnavailableReply(uiLanguage) {
         : "I don't have that on hand just now. Call +966 13 813 4200 or email info@sdrs.com.sa, or open Facilities, Services, or Investment on this site.";
 }
 
+export function isVagueFollowUp(message) {
+    const value = String(message || '').trim().toLowerCase().replace(/[.!?]+$/, '');
+    if (!value || value.length > 32) return false;
+    return /^(what|why|and|more|that|this|those|go on|tell me more|and what|what about (it|that|this|them))$/.test(value);
+}
+
 export function localFaqReply(message, uiLanguage) {
     const raw = String(message || '').trim();
     if (!raw || raw.length > 80) return null;

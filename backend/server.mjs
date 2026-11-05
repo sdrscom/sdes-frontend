@@ -2,18 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadKnowledgeBase } from './knowledgeBase.js';
-import { executeTool } from './tools.js';
 import maintenanceMiddleware from './middleware/maintenanceMiddleware.js';
-import { readFunctionCalls, readReplyText } from './readFunctionCalls.js';
-import { sanitizeHistoryForGemini, buildMessageParts } from './chatHistory.js';
+import { readReplyText } from './readFunctionCalls.js';
+import { sanitizeHistoryForGemini, buildMessageParts, lastUserText } from './chatHistory.js';
 import { validateChatRequest, validateHistoryPayload } from './validation.js';
-import { withTimeout, withModelFallback, thinkingConfigForModel, geminiHttpStatus, isVoiceFallbackError } from './reliability.js';
+import { withModelFallback, geminiHttpStatus, isVoiceFallbackError } from './reliability.js';
+import { generateGeminiTurn } from './geminiClient.js';
 import { parseVoiceModelOutput } from './voiceReply.js';
 import { validateLeadPayload, isLeadEmailConfigured, sendLeadEmail } from './leadEmail.js';
 import { smallTalkReply } from './smallTalk.js';
-import { localFaqReply, geminiUnavailableReply } from './localFaq.js';
+import { localFaqReply, geminiUnavailableReply, isVagueFollowUp } from './localFaq.js';
 
 dotenv.config();
 
@@ -74,19 +73,7 @@ const leadRateLimiter = rateLimit({
 // so /api/chat hangs until the browser gives up with "could not reach".
 app.use(maintenanceMiddleware());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 let systemInstruction = loadKnowledgeBase();
-
-// Cheap, dependency-free cost visibility: Gemini reports token counts on every
-// response, but the code previously discarded that. Logging it gives at least a
-// basic signal in Vercel's function logs for spotting unusually expensive turns,
-// without standing up a full analytics/observability service.
-function logTokenUsage(kind, response, startedAt) {
-    const usage = response?.usageMetadata;
-    const elapsedMs = startedAt ? Date.now() - startedAt : undefined;
-    if (!usage && elapsedMs === undefined) return;
-    console.log(`[gemini:${kind}] latency=${elapsedMs ?? '?'}ms prompt=${usage?.promptTokenCount ?? '?'} candidates=${usage?.candidatesTokenCount ?? '?'} total=${usage?.totalTokenCount ?? '?'}`);
-}
 
 // Pin Flash-Lite. The -latest alias and 3.8-flash both hung the full attempt
 // window on a live "hi", so the visitor waited ~24s for a 504. 3.8 is the
@@ -108,7 +95,10 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             return res.status(validation.status).send(validation.error);
         }
 
-        const localReply = smallTalkReply(message, uiLanguage) || localFaqReply(message, uiLanguage);
+        const priorQuestion = lastUserText(history);
+        const localReply = smallTalkReply(message, uiLanguage)
+            || localFaqReply(message, uiLanguage)
+            || (isVagueFollowUp(message) ? localFaqReply(priorQuestion, uiLanguage) : null);
         if (localReply && !attachmentBase64) {
             return res.type('text').send(localReply);
         }
@@ -122,6 +112,11 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
         // placeholder like "[Attachment: invoice.pdf (245 KB)]" — Gemini never saw the
         // file itself, so it could not answer any question about its contents.
         const messageParts = buildMessageParts(message, attachmentBase64, attachmentMimeType);
+        if (isVagueFollowUp(message) && priorQuestion) {
+            messageParts.unshift({
+                text: `[Short follow-up. Their previous question was: ${priorQuestion}]`
+            });
+        }
 
         // The site has its own English/Arabic toggle. The system prompt already
         // replies in whichever language the user's message is clearly written in,
@@ -136,54 +131,20 @@ app.post('/api/chat', chatRateLimiter, async (req, res) => {
             });
         }
 
-        const { result: firstResult, chat } = await withModelFallback(
+        const result = await withModelFallback(
             [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL],
-            async (modelName) => {
-                console.log(`[gemini:chat] trying ${modelName}`);
-                const model = genAI.getGenerativeModel({
-                    model: modelName,
-                    systemInstruction: systemInstruction,
-                    generationConfig: {
-                        ...thinkingConfigForModel(modelName),
-                        maxOutputTokens: 400
-                    }
-                });
-                const nextChat = model.startChat({ history: sanitizedHistory });
-                const startedAt = Date.now();
-                const nextResult = await withTimeout(
-                    () => nextChat.sendMessage(messageParts),
-                    GEMINI_ATTEMPT_MS,
-                    `Gemini chat (${modelName})`
-                );
-                logTokenUsage('chat', nextResult?.response, startedAt);
-                return { result: nextResult, chat: nextChat };
-            },
-            isVoiceFallbackError
+            async (modelName) => generateGeminiTurn({
+                apiKey: process.env.GEMINI_API_KEY,
+                modelName,
+                systemInstruction,
+                history: sanitizedHistory,
+                userParts: messageParts,
+                maxOutputTokens: 1024,
+                timeoutMs: GEMINI_ATTEMPT_MS,
+                label: 'chat'
+            })
         );
-        let result = firstResult;
-        const callList = readFunctionCalls(result?.response);
         let finalMessage = readReplyText(result?.response);
-
-        if (callList.length > 0) {
-            const toolCall = callList[0];
-            const toolResult = await executeTool(toolCall.name, toolCall.args);
-
-            try {
-                result = await withTimeout(
-                    () => chat.sendMessage([{
-                        functionResponse: {
-                            name: toolCall.name,
-                            response: toolResult
-                        }
-                    }]),
-                    GEMINI_ATTEMPT_MS,
-                    `Gemini chat tool-followup`
-                );
-                finalMessage = readReplyText(result?.response) || finalMessage;
-            } catch (toolError) {
-                console.error('Tool follow-up failed:', toolError);
-            }
-        }
 
         if (!finalMessage) {
             finalMessage = 'I could not complete that answer. Please ask again, or contact the SDRS commercial team at info@sdrs.com.sa.';
@@ -234,15 +195,6 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const base64Data = audioBase64.split(',')[1];
         const mimeType = audioBase64.split(';')[0].split(':')[1];
 
-        const voiceGenerationConfig = (modelName) => ({
-            ...thinkingConfigForModel(modelName),
-            // JSON mime + audio 400s on some Gemini ids. The prompt still
-            // asks for JSON; parseVoiceModelOutput accepts fences or prose.
-            // 160 tokens was too tight: a longer transcript truncated the
-            // JSON and the caller only heard the processing-error line.
-            maxOutputTokens: 280
-        });
-
         // The shared system instruction's "3-6 short bullets" sales-desk format is
         // written for the text chat window, not for a voice call — a bulleted list
         // read aloud sentence-by-sentence with no connecting words is a big part of
@@ -270,22 +222,16 @@ app.post('/api/voice-chat', chatRateLimiter, async (req, res) => {
         const sanitizedHistory = sanitizeHistoryForGemini(history, undefined);
         const result = await withModelFallback(
             [GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_VOICE_FALLBACK_MODEL],
-            async (modelName) => {
-                const voiceModel = genAI.getGenerativeModel({
-                    model: modelName,
-                    systemInstruction: systemInstruction,
-                    generationConfig: voiceGenerationConfig(modelName)
-                });
-                const voiceChat = voiceModel.startChat({ history: sanitizedHistory });
-                const voiceStartedAt = Date.now();
-                const nextResult = await withTimeout(
-                    () => voiceChat.sendMessage([prompt, audioPart]),
-                    GEMINI_VOICE_ATTEMPT_MS,
-                    `Gemini voice-chat (${modelName})`
-                );
-                logTokenUsage('voice-chat', nextResult?.response, voiceStartedAt);
-                return nextResult;
-            },
+            async (modelName) => generateGeminiTurn({
+                apiKey: process.env.GEMINI_API_KEY,
+                modelName,
+                systemInstruction,
+                history: sanitizedHistory,
+                userParts: [{ text: prompt }, audioPart],
+                maxOutputTokens: 280,
+                timeoutMs: GEMINI_VOICE_ATTEMPT_MS,
+                label: 'voice-chat'
+            }),
             isVoiceFallbackError
         );
         const responseText = readReplyText(result?.response);

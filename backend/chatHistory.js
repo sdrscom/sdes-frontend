@@ -56,6 +56,20 @@ export function enforceAlternatingRoles(history) {
 // context matters far less than what the user just asked.
 export const MAX_HISTORY_MESSAGES = 24;
 
+export function lastUserText(rawHistory) {
+    if (!Array.isArray(rawHistory)) return '';
+    for (let i = rawHistory.length - 1; i >= 0; i--) {
+        const role = String(rawHistory[i]?.role || '').toLowerCase();
+        if (role !== 'user' && role !== 'human') continue;
+        const parts = rawHistory[i]?.parts;
+        if (Array.isArray(parts)) {
+            return parts.map(part => (typeof part?.text === 'string' ? part.text : '')).join(' ').trim();
+        }
+        return String(rawHistory[i]?.text || '').trim();
+    }
+    return '';
+}
+
 export function sanitizeHistoryForGemini(rawHistory, incomingMessage) {
     let history = normalizeHistory(rawHistory);
 

@@ -166,14 +166,19 @@ const CHATBOT_TEXT = {
         placeholderListening: 'Listening for speech…',
         placeholderAttachment: 'Add a note and send',
         placeholderDefault: 'Message',
-        leadTitle: 'Want the team to continue this?',
-        leadBody: 'Leave your details and this chat goes to commercial@sdrs.com.sa.',
-        leadCompany: 'Company name',
-        leadPhone: 'Mobile',
-        leadEmail: 'Work email',
-        leadSubmit: 'Send to the team',
+        leadTitle: 'Request a Personal Consultation',
+        leadBody: 'Need reliable logistics and bonded-zone solutions? Share your details, and let us help your business move forward.',
+        leadDetails: 'Your Contact Details',
+        leadName: 'Full Name *',
+        leadCompany: 'Company Name *',
+        leadPhone: 'Mobile Number *',
+        leadEmail: 'Work Email Address *',
+        leadSubmit: 'Request a Callback',
         leadSending: 'Sending…',
-        leadDone: 'Sent. The commercial team has this chat and will follow up.',
+        leadDoneTitle: 'Thank You for Reaching Out!',
+        leadDone: 'Your details have been submitted successfully. Our team will get in touch with you shortly. In the meantime, feel free to ask us anything about our services.',
+        leadMore: 'What would you like to know more about?',
+        leadFollowUps: ['Explore Our Services', 'Logistics Solutions', 'Warehousing Solutions', 'Other Business Inquiries'],
         leadError: 'Could not send that just now. Email commercial@sdrs.com.sa.',
         leadClose: 'Close',
         voiceTitle: 'Start Voice Mode',
@@ -225,14 +230,19 @@ const CHATBOT_TEXT = {
         placeholderListening: 'يستمع للصوت…',
         placeholderAttachment: 'أضف ملاحظة وأرسل',
         placeholderDefault: 'رسالة',
-        leadTitle: 'تبغى الفريق يكمل معك؟',
-        leadBody: 'اترك بياناتك ويوصل هذا الحوار إلى commercial@sdrs.com.sa.',
-        leadCompany: 'اسم الشركة',
-        leadPhone: 'الجوال',
-        leadEmail: 'البريد العملي',
-        leadSubmit: 'أرسل للفريق',
+        leadTitle: 'طلب استشارة شخصية',
+        leadBody: 'تحتاج حلول لوجستية ومنطقة إيداع يعتمد عليها؟ شارك بياناتك ونساعدك تمضي بعملك.',
+        leadDetails: 'بيانات التواصل',
+        leadName: 'الاسم الكامل *',
+        leadCompany: 'اسم الشركة *',
+        leadPhone: 'رقم الجوال *',
+        leadEmail: 'البريد العملي *',
+        leadSubmit: 'اطلب معاودة الاتصال',
         leadSending: 'جارٍ الإرسال…',
-        leadDone: 'تم الإرسال. الفريق التجاري استلم الحوار وبيتواصل معك.',
+        leadDoneTitle: 'شكراً لتواصلك',
+        leadDone: 'وصلت بياناتك بنجاح. الفريق بيتواصل معك قريباً. في الأثناء اسأل عن أي شيء في خدماتنا.',
+        leadMore: 'وش تبي تعرف أكثر؟',
+        leadFollowUps: ['استكشف خدماتنا', 'الحلول اللوجستية', 'حلول التخزين', 'استفسارات أعمال أخرى'],
         leadError: 'تعذّر الإرسال الآن. راسل commercial@sdrs.com.sa.',
         leadClose: 'إغلاق',
         voiceTitle: 'بدء وضع الصوت',
@@ -560,7 +570,7 @@ const css = `
    under the avatar circle now sitting to its left. */
 .message-wrapper.bot .timestamp { padding-left: 34px; }
 .lead-card {
-    flex: 0 0 auto; margin: 0 12px 10px; padding: 12px; border-radius: 14px;
+    position: relative; flex: 0 0 auto; margin: 0 12px 10px; padding: 12px; border-radius: 14px;
     background: #fff; border: 1px solid rgba(45, 59, 118, 0.14);
     box-shadow: 0 4px 12px rgba(26, 35, 71, 0.06);
     animation: leadCardIn 0.28s ease-out;
@@ -577,7 +587,9 @@ const css = `
 }
 .lead-dismiss:hover { background: rgba(45, 59, 118, 0.08); color: #1a2347; }
 .lead-card > p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: #5c6784; }
+.lead-details { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #2d3b76; }
 .lead-card label { display: block; margin-bottom: 8px; }
+.lead-card label span { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 600; color: #1a2347; }
 .lead-card input {
     box-sizing: border-box; width: 100%; height: 40px; padding: 0 12px;
     border: 1px solid rgba(45, 59, 118, 0.16); border-radius: 10px;
@@ -592,6 +604,20 @@ const css = `
 .lead-submit:disabled { opacity: 0.6; cursor: wait; }
 .lead-card .lead-error { margin: 8px 0 0; font-size: 12px; color: #b82227; }
 .lead-card.is-done { background: #f3fbf6; border-color: rgba(61, 220, 151, 0.35); }
+.lead-done-title {
+    display: flex; align-items: center; gap: 8px; margin: 0; flex: 1; min-width: 0;
+    font-size: 13.5px; font-weight: 700; color: #1a2347;
+}
+.lead-done-title svg { flex: 0 0 auto; color: #1f9d5b; }
+.lead-card.is-done > p { margin: 0 0 12px; }
+.lead-more { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #1a2347; }
+.lead-followups { display: flex; flex-direction: column; gap: 6px; }
+.lead-followups button {
+    width: 100%; min-height: 38px; padding: 8px 12px; border-radius: 10px;
+    border: 1px solid rgba(45, 59, 118, 0.16); background: #fff; color: #1a2347;
+    font: inherit; font-size: 12.5px; font-weight: 600; text-align: start; cursor: pointer;
+}
+.lead-followups button:hover { border-color: #2d3b76; background: #f7f8fc; }
 @keyframes leadCardIn {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: none; }
@@ -800,7 +826,7 @@ export default function Chatbot() {
     const [leadOfferReady, setLeadOfferReady] = useState(() => (
         Boolean(savedSession?.leadSent || savedSession?.leadOffered) && !savedSession?.leadDismissed
     ));
-    const [leadForm, setLeadForm] = useState({ company: '', phone: '', email: '', website: '' });
+    const [leadForm, setLeadForm] = useState({ name: '', company: '', phone: '', email: '', website: '' });
     const [leadSubmitting, setLeadSubmitting] = useState(false);
     const [leadError, setLeadError] = useState('');
     // The window is kept mounted for a bit after isChatOpen flips back to
@@ -1221,6 +1247,7 @@ export default function Chatbot() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    name: leadForm.name,
                     company: leadForm.company,
                     phone: leadForm.phone,
                     email: leadForm.email,
@@ -1902,7 +1929,7 @@ export default function Chatbot() {
         setLeadSent(false);
         setLeadDismissed(false);
         setLeadOfferReady(false);
-        setLeadForm({ company: '', phone: '', email: '', website: '' });
+        setLeadForm({ name: '', company: '', phone: '', email: '', website: '' });
         setLeadError('');
         setSelectedAttachment(null);
         setInput('');
@@ -2142,12 +2169,26 @@ export default function Chatbot() {
                     {!leadDismissed && (leadSent || leadOfferReady) && (
                         <form className={`lead-card${leadSent ? ' is-done' : ''}`} onSubmit={handleLeadSubmit} dir={language === 'ar' ? 'rtl' : 'ltr'}>
                             {leadSent ? (
-                                <div className="lead-card-head">
+                                <>
+                                    <div className="lead-card-head">
+                                        <p className="lead-done-title">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M7.5 12.5l3 3 6-6.5" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                            {t.leadDoneTitle}
+                                        </p>
+                                        <button type="button" className="lead-dismiss" onClick={dismissLeadOffer} aria-label={t.leadClose} title={t.leadClose}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                        </button>
+                                    </div>
                                     <p>{t.leadDone}</p>
-                                    <button type="button" className="lead-dismiss" onClick={dismissLeadOffer} aria-label={t.leadClose} title={t.leadClose}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                    </button>
-                                </div>
+                                    <p className="lead-more">{t.leadMore}</p>
+                                    <div className="lead-followups">
+                                        {t.leadFollowUps.map((topic) => (
+                                            <button key={topic} type="button" onClick={() => { dismissLeadOffer(); handleSendMessage(topic); }} disabled={isThinking}>
+                                                {topic}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
                             ) : (
                                 <>
                                     <div className="lead-card-head">
@@ -2157,14 +2198,22 @@ export default function Chatbot() {
                                         </button>
                                     </div>
                                     <p>{t.leadBody}</p>
+                                    <p className="lead-details">{t.leadDetails}</p>
                                     <label>
-                                        <input type="text" name="company" autoComplete="organization" required maxLength={120} placeholder={t.leadCompany} value={leadForm.company} onChange={(e) => setLeadForm((prev) => ({ ...prev, company: e.target.value }))} />
+                                        <span>{t.leadName}</span>
+                                        <input type="text" name="name" autoComplete="name" required maxLength={80} value={leadForm.name} onChange={(e) => setLeadForm((prev) => ({ ...prev, name: e.target.value }))} />
                                     </label>
                                     <label>
-                                        <input type="tel" name="phone" autoComplete="tel" required maxLength={20} placeholder={t.leadPhone} value={leadForm.phone} onChange={(e) => setLeadForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                                        <span>{t.leadCompany}</span>
+                                        <input type="text" name="company" autoComplete="organization" required maxLength={120} value={leadForm.company} onChange={(e) => setLeadForm((prev) => ({ ...prev, company: e.target.value }))} />
                                     </label>
                                     <label>
-                                        <input type="email" name="email" autoComplete="email" required maxLength={160} placeholder={t.leadEmail} value={leadForm.email} onChange={(e) => setLeadForm((prev) => ({ ...prev, email: e.target.value }))} />
+                                        <span>{t.leadPhone}</span>
+                                        <input type="tel" name="phone" autoComplete="tel" required maxLength={20} value={leadForm.phone} onChange={(e) => setLeadForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                                    </label>
+                                    <label>
+                                        <span>{t.leadEmail}</span>
+                                        <input type="email" name="email" autoComplete="email" required maxLength={160} value={leadForm.email} onChange={(e) => setLeadForm((prev) => ({ ...prev, email: e.target.value }))} />
                                     </label>
                                     <input className="lead-honeypot" type="text" name="website" tabIndex={-1} autoComplete="off" value={leadForm.website} onChange={(e) => setLeadForm((prev) => ({ ...prev, website: e.target.value }))} />
                                     <button className="lead-submit" type="submit" disabled={leadSubmitting}>{leadSubmitting ? t.leadSending : t.leadSubmit}</button>

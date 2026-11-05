@@ -8,6 +8,7 @@ export function digitsOnly(value) {
 }
 
 export function validateLeadPayload(body) {
+    const name = String(body?.name || '').trim();
     const company = String(body?.company || '').trim();
     const phone = String(body?.phone || '').trim();
     const email = String(body?.email || '').trim().toLowerCase();
@@ -17,6 +18,9 @@ export function validateLeadPayload(body) {
 
     if (website) {
         return { valid: false, status: 400, error: 'Invalid request.' };
+    }
+    if (name.length < 2 || name.length > 80) {
+        return { valid: false, status: 400, error: 'Please enter your full name.' };
     }
     if (company.length < 2 || company.length > 120) {
         return { valid: false, status: 400, error: 'Please enter a company name.' };
@@ -43,7 +47,7 @@ export function validateLeadPayload(body) {
 
     return {
         valid: true,
-        lead: { company, phone, email, language, transcript: cleanTranscript }
+        lead: { name, company, phone, email, language, transcript: cleanTranscript }
     };
 }
 
@@ -52,10 +56,11 @@ export function buildLeadEmail(lead) {
         const who = row.role === 'user' ? 'Visitor' : 'Fares';
         return `${who}: ${row.text}`;
     });
-    const subject = `Fares chat — ${lead.company}`;
+    const subject = `Fares callback: ${lead.name}, ${lead.company}`;
     const text = [
-        'A visitor asked Fares to pass this chat to the commercial team.',
+        'A visitor asked Fares for a callback from the commercial team.',
         '',
+        `Name: ${lead.name}`,
         `Company: ${lead.company}`,
         `Mobile: ${lead.phone}`,
         `Email: ${lead.email}`,

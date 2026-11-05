@@ -116,7 +116,14 @@ assert.equal(lead.saved, false);
 assert.match(lead.message, /commercial@sdrs\.com\.sa/);
 
 assert.equal(validateLeadPayload({ company: 'A', phone: '123', email: 'bad' }).valid, false);
+assert.equal(validateLeadPayload({
+    company: 'Acme Logistics',
+    phone: '+966138134200',
+    email: 'ops@acme.sa',
+    transcript: [{ role: 'user', text: 'What warehouse space do you have?' }, { role: 'bot', text: 'We have closed warehouses in Dammam.' }]
+}).valid, false, 'a callback request without a name must be rejected');
 const goodLead = validateLeadPayload({
+    name: 'Sara Ahmed',
     company: 'Acme Logistics',
     phone: '+966138134200',
     email: 'ops@acme.sa',
@@ -125,10 +132,13 @@ const goodLead = validateLeadPayload({
 assert.equal(goodLead.valid, true);
 const leadMail = buildLeadEmail(goodLead.lead);
 assert.equal(leadMail.to, 'commercial@sdrs.com.sa');
+assert.match(leadMail.subject, /Sara Ahmed/);
 assert.match(leadMail.subject, /Acme Logistics/);
+assert.match(leadMail.text, /Name: Sara Ahmed/);
 assert.match(leadMail.text, /Visitor: What warehouse space/);
 assert.equal(isLeadEmailConfigured(), false, 'tests must not think SMTP/Resend is configured');
 assert.equal(validateLeadPayload({
+    name: 'Sara Ahmed',
     company: 'Acme',
     phone: '+966138134200',
     email: 'ops@acme.sa',

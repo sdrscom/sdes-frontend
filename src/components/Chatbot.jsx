@@ -1905,12 +1905,12 @@ export default function Chatbot() {
 
         // Snapshot before this turn. Only committed to conversationHistoryRef once
         // we know the exchange actually succeeded.
-        // Even when Gemini answers almost instantly, popping the reply in
-        // immediately feels jarring/robotic. Keep the typing indicator up for
-        // at least this long so a reply always arrives with a brief, natural
-        // "thinking" beat — only the remaining time is waited, so slower
-        // replies aren't delayed any further than they already are.
-        const MIN_THINKING_MS = 250;
+        // Knowledge replies resolve in a few milliseconds. Showing them at once
+        // looks like a canned dump, not a person answering. Keep the typing
+        // indicator up for this long so local FAQ and a fast Gemini turn both
+        // arrive with a short beat. Slower Gemini replies are not delayed any
+        // further than they already are.
+        const MIN_THINKING_MS = 800;
         const thinkingStartedAt = Date.now();
         async function waitForMinThinkingTime() {
             const elapsed = Date.now() - thinkingStartedAt;

@@ -51,6 +51,25 @@ function countRealUserTurns(messages) {
     return (messages || []).filter((m) => m.role === 'user' && m.text && !isSmallTalk(m.text)).length;
 }
 
+function lastUserMessageText(messages) {
+    for (let i = (messages || []).length - 1; i >= 0; i--) {
+        if (messages[i]?.role === 'user' && messages[i].text) return String(messages[i].text);
+    }
+    return '';
+}
+
+function isLeadIntent(text) {
+    const value = String(text || '').trim().toLowerCase();
+    if (!value || value.length > 180) return false;
+    return /contact us|contact you|get in touch|follow[- ]?up|call me|email me|reach me|talk to (a |the )?(person|someone|team|sales|commercial)|speak to (a |the )?(person|someone|team|sales)|leave (my )?(details|number)|send .{0,20}(team|sales)|quote|book (a )?(visit|appointment)|want (a )?person|sales team|commercial team|fill( in| out)? (the )?form|اتصل بنا|تواصل|عرض سعر|حجز|موعد/.test(value);
+}
+
+function isConversationClosing(text) {
+    const value = String(text || '').trim().toLowerCase().replace(/[.!?]+$/g, '');
+    if (!value || value.length > 48) return false;
+    return /^(thanks|thank you|thx|bye|goodbye|that'?s (all|it)|i'?m good|all good|nothing else|no thanks|take care|شكراً?|مع السلامة)$/.test(value);
+}
+
 function localSmallTalkReply(text, t) {
     const value = String(text || '').trim();
     if (/^(thanks|thank you|thx|شكراً|شكرا)!?[.]?$/i.test(value)) return t.smallTalkThanks;
@@ -830,6 +849,9 @@ export default function Chatbot() {
     const endRef = useRef(null);
     const fileInputRef = useRef(null);
     const messageInputRef = useRef(null);
+    // After send, keep the caret in the type box so the next message does not
+    // need a click. Cleared only when they focus something outside the composer.
+    const keepComposerFocusRef = useRef(false);
     const speechBufferRef = useRef('');
     const dictationBaseRef = useRef('');
     // Tracks whether the user still wants dictation running. Needed because even
@@ -1089,14 +1111,21 @@ export default function Chatbot() {
         });
     }, [messages, isChatOpen, leadSent, leadDismissed, leadOfferReady]);
 
-    // Intercom/Crisp pattern: wait for a real exchange, then idle after the
-    // bot reply so the card does not cover the answer or interrupt typing.
+    // Intercom/Crisp pattern: one polite offer after a real exchange, idle
+    // after the bot reply so the card does not cover the answer. Closing X
+    // means "not now" for ordinary chat. Bring it back if they ask for a
+    // person, or if the conversation is wrapping up (thanks / bye).
     useEffect(() => {
-        if (leadDismissed || leadSent || leadOfferReady) return undefined;
+        if (leadSent || leadOfferReady) return undefined;
 
         const last = messages[messages.length - 1];
+        const lastUserText = lastUserMessageText(messages);
         const composing = Boolean(String(input || '').trim()) || isDictating;
-        const readyToOffer = countRealUserTurns(messages) >= LEAD_MIN_USER_TURNS
+        const realTurns = countRealUserTurns(messages);
+        const intent = isLeadIntent(lastUserText);
+        const closing = isConversationClosing(lastUserText) && realTurns >= 1;
+        const scheduled = !leadDismissed && realTurns >= LEAD_MIN_USER_TURNS;
+        const readyToOffer = (scheduled || intent || closing)
             && last?.role === 'bot'
             && !isThinking
             && !isVoiceActive
@@ -1104,9 +1133,18 @@ export default function Chatbot() {
 
         if (!readyToOffer) return undefined;
 
-        const timer = setTimeout(() => setLeadOfferReady(true), LEAD_SHOW_DELAY_MS);
+        const timer = setTimeout(() => {
+            setLeadDismissed(false);
+            setLeadOfferReady(true);
+        }, LEAD_SHOW_DELAY_MS);
         return () => clearTimeout(timer);
     }, [messages, input, isThinking, isVoiceActive, isDictating, leadSent, leadDismissed, leadOfferReady]);
+
+    useEffect(() => {
+        if (isThinking) return;
+        restoreComposerFocus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isThinking]);
 
     // Dictation shouldn't keep listening forever just because it was started
     // once — clicking anywhere other than the composer (the message input,
@@ -1148,6 +1186,26 @@ export default function Chatbot() {
         setLeadDismissed(true);
         setLeadOfferReady(false);
         setLeadError('');
+    }
+
+    function restoreComposerFocus() {
+        if (!keepComposerFocusRef.current || !isChatOpen) return;
+        const el = messageInputRef.current;
+        if (!el || el.disabled) return;
+        try { el.focus({ preventScroll: true }); } catch (e) {}
+    }
+
+    function handleComposerFocus() {
+        keepComposerFocusRef.current = true;
+    }
+
+    function handleComposerBlur(event) {
+        const next = event.relatedTarget;
+        if (inputAreaRef.current && next && inputAreaRef.current.contains(next)) {
+            keepComposerFocusRef.current = true;
+            return;
+        }
+        keepComposerFocusRef.current = false;
     }
 
     async function handleLeadSubmit(event) {
@@ -1852,6 +1910,7 @@ export default function Chatbot() {
     }
 
     async function handleSendMessage(messageOverride = null) {
+        if (isThinking) return;
         const typedMessage = (messageOverride ?? input).trim();
         const attachment = selectedAttachment;
         let finalMessage = typedMessage;
@@ -1887,6 +1946,8 @@ export default function Chatbot() {
         setInput('');
         try { autoResizeMessageInput(true, ''); } catch (e) {}
         setSelectedAttachment(null);
+        keepComposerFocusRef.current = true;
+        restoreComposerFocus();
 
         const history = conversationHistoryRef.current;
         if (!attachment && isSmallTalk(typedMessage)) {
@@ -1897,6 +1958,7 @@ export default function Chatbot() {
                 { role: 'user', parts: [{ text: finalMessage }] },
                 { role: 'model', parts: [{ text: reply }] }
             ];
+            restoreComposerFocus();
             return;
         }
 
@@ -1970,6 +2032,7 @@ export default function Chatbot() {
             appendMessage(t.reachFailed, 'bot');
         } finally {
             setIsThinking(false);
+            restoreComposerFocus();
         }
     }
 
@@ -2132,7 +2195,7 @@ export default function Chatbot() {
                                     e.preventDefault();
                                     handleSendMessage();
                                 }
-                            }} rows={1} dir="auto" placeholder={isThinking ? t.placeholderThinking : isDictating ? t.placeholderListening : selectedAttachment ? t.placeholderAttachment : t.placeholderDefault} autoComplete="off" disabled={isThinking} />
+                            }} onFocus={handleComposerFocus} onBlur={handleComposerBlur} rows={1} dir="auto" placeholder={isDictating ? t.placeholderListening : selectedAttachment ? t.placeholderAttachment : t.placeholderDefault} autoComplete="off" />
                         </div>
                         <button className={`icon-btn ${isVoiceActive ? 'voice-active' : ''}`} id="open-voice-btn" title={t.voiceTitle} onClick={openVoice}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 7v10M22 10v4M7 7v10M2 10v4"/></svg>

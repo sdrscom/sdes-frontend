@@ -132,6 +132,7 @@ const goodLead = validateLeadPayload({
 assert.equal(goodLead.valid, true);
 const leadMail = buildLeadEmail(goodLead.lead);
 assert.equal(leadMail.to, 'commercial@sdrs.com.sa');
+assert.match(leadMail.from, /it_support@sdrs\.com\.sa/);
 assert.match(leadMail.subject, /Sara Ahmed/);
 assert.match(leadMail.subject, /Acme Logistics/);
 assert.match(leadMail.text, /Name: Sara Ahmed/);

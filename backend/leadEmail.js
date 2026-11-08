@@ -1,5 +1,24 @@
+import nodemailer from 'nodemailer';
+
 const LEAD_TO = process.env.CHAT_LEAD_TO || 'commercial@sdrs.com.sa';
 const LEAD_FROM = process.env.CHAT_LEAD_FROM || 'Fares <it_support@sdrs.com.sa>';
+
+function decodeEnv(value) {
+    return String(value || '')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&amp;/gi, '&')
+        .trim();
+}
+
+function leadFromAddress() {
+    const user = decodeEnv(process.env.SMTP_USER);
+    const configured = decodeEnv(process.env.CHAT_LEAD_FROM || LEAD_FROM);
+    if (user && configured.toLowerCase().includes(user.toLowerCase())) return configured;
+    if (user) return `Fares <${user}>`;
+    return configured;
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -70,7 +89,13 @@ export function buildLeadEmail(lead) {
         'Conversation:',
         ...lines
     ].join('\n');
-    return { to: LEAD_TO, from: LEAD_FROM, replyTo: lead.email, subject, text };
+    return {
+        to: decodeEnv(process.env.CHAT_LEAD_TO) || LEAD_TO,
+        from: leadFromAddress(),
+        replyTo: lead.email,
+        subject,
+        text
+    };
 }
 
 export function isLeadEmailConfigured() {
@@ -106,23 +131,39 @@ export async function sendLeadEmail(lead) {
     }
 
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-        const nodemailer = await import('nodemailer');
+        const port = Number(process.env.SMTP_PORT) || 587;
         const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: Number(process.env.SMTP_PORT) || 587,
-            secure: process.env.SMTP_SECURE === 'true',
+            host: decodeEnv(process.env.SMTP_HOST),
+            port,
+            secure: process.env.SMTP_SECURE === 'true' || port === 465,
+            requireTLS: port === 587,
             auth: {
-                user: process.env.SMTP_USER,
+                user: decodeEnv(process.env.SMTP_USER),
                 pass: process.env.SMTP_PASS
-            }
+            },
+            tls: { minVersion: 'TLSv1.2' },
+            connectionTimeout: 12000,
+            greetingTimeout: 12000,
+            socketTimeout: 15000
         });
-        await transporter.sendMail({
-            from: payload.from,
-            to: payload.to,
-            replyTo: payload.replyTo,
-            subject: payload.subject,
-            text: payload.text
-        });
+        try {
+            await transporter.sendMail({
+                from: payload.from,
+                to: payload.to,
+                replyTo: payload.replyTo,
+                subject: payload.subject,
+                text: payload.text,
+                envelope: {
+                    from: decodeEnv(process.env.SMTP_USER),
+                    to: payload.to
+                }
+            });
+        } catch (error) {
+            const code = error?.code || error?.responseCode || '';
+            const hint = String(error?.response || error?.message || '').slice(0, 240);
+            console.error('Chat lead SMTP failed:', code, hint);
+            throw error;
+        }
         return { sent: true, via: 'smtp' };
     }
 
